@@ -540,24 +540,29 @@
                     color: "rgb(129, 251, 97)",
                     threshold: 0.39,
                     smoothing: 0.1,
+                    maskToBg: false, // Bush appears in foreground
                   },
                   "title-video": {
                     chromaType: "green",
                     color: "rgb(129, 251, 97)",
                     threshold: 0.4,
                     smoothing: 0.1,
+                    maskToBg: false, // Title appears over everything
                   },
                   "clouds-video": {
                     chromaType: "blue",
                     color: "rgb(165, 202, 223)",
                     threshold: 0.38,
                     smoothing: 0.1,
+                    maskToBg: true, // Clouds only over background
+                    clipPath: "polygon(10% 10%, 90% 10%, 90% 75%, 10% 75%)", // Sky area only
                   },
                   "mountains-video": {
                     chromaType: "black",
                     color: "rgb(0, 0, 0)",
                     threshold: 0.4,
                     smoothing: 0.1,
+                    maskToBg: false, // Mountains appear normally
                   },
                 };
 
@@ -578,6 +583,13 @@
                     "chroma-key",
                     `color: ${config.color}; threshold: ${config.threshold}; smoothing: ${config.smoothing}`
                   );
+
+                  // Apply clipping mask if specified
+                  if (config.clipPath) {
+                    console.log(`🎭 Applying clip mask to ${overlay.id}: ${config.clipPath}`);
+                    mediaEl.setAttribute("style", `clip-path: ${config.clipPath}`);
+                  }
+
                 } else {
                   // Video element with basic transparency (for non-chroma backgrounds)
                   console.log(
