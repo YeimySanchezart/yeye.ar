@@ -156,14 +156,15 @@
       // A-FRAME COMPONENTS
       // ========================================
 
-      // Chroma key component with optional depth masking
+      // Chroma key component with optional background masking
       AFRAME.registerComponent("chroma-key", {
         schema: {
           color: { type: "color", default: "#000000" },
           threshold: { type: "number", default: 0.15 },
           smoothing: { type: "number", default: 0.1 },
-          depthMask: { type: "boolean", default: false },
-          skyLimit: { type: "number", default: 0.75 },
+          backgroundMask: { type: "boolean", default: false },
+          bgScaleX: { type: "number", default: 1.1625 }, // Background image X scale
+          bgScaleY: { type: "number", default: 1.5 }, // Background image Y scale
         },
 
         init: function () {
@@ -175,7 +176,7 @@
             if (mesh && mesh.material) {
               const material = mesh.material;
 
-              // Create custom shader material for chroma key with optional depth masking
+              // Create custom shader material for chroma key with optional background masking
               const vertexShader = `
                 varying vec2 vUv;
                 void main() {
@@ -190,8 +191,9 @@
                 uniform float threshold;
                 uniform float smoothing;
                 uniform float opacity;
-                uniform bool depthMask;
-                uniform float skyLimit;
+                uniform bool backgroundMask;
+                uniform float bgScaleX;
+                uniform float bgScaleY;
                 varying vec2 vUv;
 
                 void main() {
@@ -201,22 +203,28 @@
                   float distance = length(textureColor.rgb - chromaColor);
                   float chromaAlpha = smoothstep(threshold - smoothing, threshold + smoothing, distance);
                   
-                  // Optional depth masking - more aggressive for testing
-                  float depthAlpha = 1.0;
-                  if (depthMask) {
-                    // UV.y goes from 0 (bottom) to 1 (top) in texture coordinates
-                    // skyLimit 0.75 means we want upper 75%, so fade out when y < 0.25
-                    float cutoffY = 1.0 - skyLimit; // 0.25 for skyLimit 0.75
+                  // Optional background masking - only appear over background bounds
+                  float bgAlpha = 1.0;
+                  if (backgroundMask) {
+                    // Convert UV to normalized device coordinates centered at 0,0
+                    vec2 ndc = (vUv - 0.5) * 2.0;
                     
-                    if (vUv.y < cutoffY) {
-                      // Below cutoff - more aggressive fade for testing
-                      float fadeZone = 0.2; // 20% fade zone for more visible effect
-                      float distFromCutoff = cutoffY - vUv.y;
-                      depthAlpha = 1.0 - smoothstep(0.0, fadeZone, distFromCutoff);
-                    }
+                    // Check if within background image bounds
+                    float bgHalfWidth = bgScaleX / 2.0;
+                    float bgHalfHeight = bgScaleY / 2.0;
+                    
+                    // Fade out smoothly at background edges
+                    float fadeZone = 0.1;
+                    float distFromEdgeX = bgHalfWidth - abs(ndc.x);
+                    float distFromEdgeY = bgHalfHeight - abs(ndc.y);
+                    
+                    float alphaX = smoothstep(-fadeZone, fadeZone, distFromEdgeX);
+                    float alphaY = smoothstep(-fadeZone, fadeZone, distFromEdgeY);
+                    
+                    bgAlpha = alphaX * alphaY;
                   }
                   
-                  float finalAlpha = chromaAlpha * depthAlpha;
+                  float finalAlpha = chromaAlpha * bgAlpha;
                   gl_FragColor = vec4(textureColor.rgb, textureColor.a * finalAlpha * opacity);
                 }
               `;
@@ -230,8 +238,9 @@
                   threshold: { value: this.data.threshold },
                   smoothing: { value: this.data.smoothing },
                   opacity: { value: material.opacity || 1.0 },
-                  depthMask: { value: this.data.depthMask },
-                  skyLimit: { value: this.data.skyLimit },
+                  backgroundMask: { value: this.data.backgroundMask },
+                  bgScaleX: { value: this.data.bgScaleX },
+                  bgScaleY: { value: this.data.bgScaleY },
                 },
                 transparent: true,
                 side: THREE.DoubleSide,
@@ -579,8 +588,8 @@
                     color: "rgb(165, 202, 223)",
                     threshold: 0.38,
                     smoothing: 0.1,
-                    depthMask: true, // Use depth masking for sky-only appearance
-                    skyLimit: 0.5, // Only appear in upper 50% for more visible testing
+                    depthMask: false, // Remove depth masking - use background masking instead
+                    backgroundMask: true, // Only appear over background image
                   },
                   "mountains-video": {
                     chromaType: "black",
@@ -605,13 +614,13 @@
                     }; alphaTest: 0.1; shader: flat`
                   );
 
-                  // Apply chroma key with optional depth masking
+                  // Apply chroma key with optional background masking
                   const chromaKeyAttrs = `color: ${config.color}; threshold: ${config.threshold}; smoothing: ${config.smoothing}`;
-                  if (config.depthMask) {
-                    console.log(`🎭 Applying depth mask to ${overlay.id} with sky limit: ${config.skyLimit}`);
+                  if (config.backgroundMask) {
+                    console.log(`🎭 Applying background mask to ${overlay.id} - only appear over background image`);
                     mediaEl.setAttribute(
                       "chroma-key",
-                      `${chromaKeyAttrs}; depthMask: true; skyLimit: ${config.skyLimit}`
+                      `${chromaKeyAttrs}; backgroundMask: true; bgScaleX: 1.1625; bgScaleY: 1.5`
                     );
                   } else {
                     mediaEl.setAttribute("chroma-key", chromaKeyAttrs);
