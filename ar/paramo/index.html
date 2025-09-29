@@ -156,6 +156,71 @@
       // A-FRAME COMPONENTS
       // ========================================
 
+      // Depth-based masking component for layering control
+      AFRAME.registerComponent("depth-mask", {
+        schema: {
+          maskType: { type: "string", default: "sky" }, // "sky", "ground", "custom"
+          skyLimit: { type: "number", default: 0.75 }, // Sky area percentage (0.0-1.0)
+        },
+
+        init: function () {
+          const el = this.el;
+          
+          // Wait for the video to load
+          el.addEventListener("materialtextureloaded", () => {
+            const mesh = el.getObject3D("mesh");
+            if (mesh && mesh.material) {
+              const material = mesh.material;
+
+              // Create custom shader material with depth masking
+              const vertexShader = `
+                varying vec2 vUv;
+                void main() {
+                  vUv = uv;
+                  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                }
+              `;
+
+              const fragmentShader = `
+                uniform sampler2D map;
+                uniform float skyLimit;
+                uniform float opacity;
+                varying vec2 vUv;
+
+                void main() {
+                  vec4 textureColor = texture2D(map, vUv);
+                  
+                  // Create depth mask based on UV coordinates
+                  float maskAlpha = 1.0;
+                  if (vUv.y < (1.0 - skyLimit)) {
+                    // Below sky limit - fade out gradually
+                    float fadeZone = 0.1; // 10% fade zone
+                    float distToLimit = (1.0 - skyLimit) - vUv.y;
+                    maskAlpha = smoothstep(0.0, fadeZone, distToLimit);
+                  }
+                  
+                  gl_FragColor = vec4(textureColor.rgb, textureColor.a * maskAlpha * opacity);
+                }
+              `;
+
+              const maskedMaterial = new THREE.ShaderMaterial({
+                vertexShader: vertexShader,
+                fragmentShader: fragmentShader,
+                uniforms: {
+                  map: { value: material.map },
+                  skyLimit: { value: this.data.skyLimit },
+                  opacity: { value: material.opacity || 1.0 },
+                },
+                transparent: true,
+                side: THREE.DoubleSide,
+              });
+
+              mesh.material = maskedMaterial;
+            }
+          });
+        },
+      });
+
       // Chroma key component for video transparency
       AFRAME.registerComponent("chroma-key", {
         schema: {
@@ -554,8 +619,8 @@
                     color: "rgb(165, 202, 223)",
                     threshold: 0.38,
                     smoothing: 0.1,
-                    maskToBg: true, // Clouds only over background
-                    clipPath: "polygon(10% 10%, 90% 10%, 90% 75%, 10% 75%)", // Sky area only
+                    depthMask: true, // Use depth masking for sky-only appearance
+                    skyLimit: 0.75, // Only appear in upper 75% of image
                   },
                   "mountains-video": {
                     chromaType: "black",
@@ -584,10 +649,10 @@
                     `color: ${config.color}; threshold: ${config.threshold}; smoothing: ${config.smoothing}`
                   );
 
-                  // Apply clipping mask if specified
-                  if (config.clipPath) {
-                    console.log(`🎭 Applying clip mask to ${overlay.id}: ${config.clipPath}`);
-                    mediaEl.setAttribute("style", `clip-path: ${config.clipPath}`);
+                  // Apply depth masking if specified
+                  if (config.depthMask) {
+                    console.log(`🎭 Applying depth mask to ${overlay.id} with sky limit: ${config.skyLimit}`);
+                    mediaEl.setAttribute("depth-mask", `skyLimit: ${config.skyLimit}`);
                   }
 
                 } else {
