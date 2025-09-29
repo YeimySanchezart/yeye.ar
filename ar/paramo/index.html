@@ -533,18 +533,40 @@
               mediaEl.setAttribute("geometry", "primitive: plane");
 
               if (overlay.url.mp4 || overlay.url.webm) {
-                // Check if this video needs chroma key
-                const isGreenChroma =
-                  overlay.id === "title-video" || overlay.id === "bush-video";
-                const isBlueChroma = overlay.id === "clouds-video";
-                const isBlackChroma = overlay.id === "mountains-video";
+                // Video configuration map for chroma key settings
+                const videoConfig = {
+                  "bush-video": {
+                    chromaType: "green",
+                    color: "rgb(129, 251, 97)",
+                    threshold: 0.35,
+                    smoothing: 0.1,
+                  },
+                  "title-video": {
+                    chromaType: "green",
+                    color: "rgb(129, 251, 97)",
+                    threshold: 0.4,
+                    smoothing: 0.1,
+                  },
+                  "clouds-video": {
+                    chromaType: "blue",
+                    color: "rgb(165, 202, 223)",
+                    threshold: 0.35,
+                    smoothing: 0.1,
+                  },
+                  "mountains-video": {
+                    chromaType: "black",
+                    color: "rgb(0, 0, 0)",
+                    threshold: 0.4,
+                    smoothing: 0.1,
+                  },
+                };
 
-                if (isGreenChroma) {
-                  // Video with green chroma key transparency - bush gets precise threshold
-                  const threshold =
-                    overlay.id === "bush-video" ? "0.35" : "0.4";
+                const config = videoConfig[overlay.id];
+
+                if (config) {
+                  // Video with chroma key transparency
                   console.log(
-                    `🎬 Creating green chroma key video element for ${overlay.id} with threshold: ${threshold}`
+                    `🎬 Creating ${config.chromaType} chroma key video element for ${overlay.id} with threshold: ${config.threshold}`
                   );
                   mediaEl.setAttribute(
                     "material",
@@ -554,37 +576,7 @@
                   );
                   mediaEl.setAttribute(
                     "chroma-key",
-                    `color: rgb(129, 251, 97); threshold: ${threshold}; smoothing: 0.1`
-                  );
-                } else if (isBlueChroma) {
-                  // Video with blue chroma key transparency
-                  console.log(
-                    `🎬 Creating blue chroma key video element for ${overlay.id}`
-                  );
-                  mediaEl.setAttribute(
-                    "material",
-                    `transparent: true; opacity: ${
-                      overlay.opacity || 1.0
-                    }; alphaTest: 0.1; shader: flat`
-                  );
-                  mediaEl.setAttribute(
-                    "chroma-key",
-                    `color: rgb(165, 202, 223); threshold: 0.35; smoothing: 0.1`
-                  );
-                } else if (isBlackChroma) {
-                  // Video with black chroma key transparency
-                  console.log(
-                    `🎬 Creating black chroma key video element for ${overlay.id}`
-                  );
-                  mediaEl.setAttribute(
-                    "material",
-                    `transparent: true; opacity: ${
-                      overlay.opacity || 1.0
-                    }; alphaTest: 0.1; shader: flat`
-                  );
-                  mediaEl.setAttribute(
-                    "chroma-key",
-                    `color: rgb(0, 0, 0); threshold: 0.4; smoothing: 0.1`
+                    `color: ${config.color}; threshold: ${config.threshold}; smoothing: ${config.smoothing}`
                   );
                 } else {
                   // Video element with basic transparency (for non-chroma backgrounds)
