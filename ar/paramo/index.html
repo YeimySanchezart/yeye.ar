@@ -903,19 +903,63 @@
             } catch (displayError) {
               console.warn("Screen capture failed:", displayError.message);
               
-              // Try simple canvas recording first
-              const canvas = document.querySelector("canvas");
+              // Try multiple approaches to get the full AR scene with camera
+              let canvas = document.querySelector("canvas");
+              
+              // First, try to get the A-Frame scene and its renderer
+              const scene = document.querySelector("a-scene");
+              if (scene && scene.renderer && scene.renderer.domElement) {
+                canvas = scene.renderer.domElement;
+                console.log("🎨 Using A-Frame renderer canvas");
+              }
+              
               if (canvas && canvas.captureStream) {
-                console.log("🎨 Trying direct canvas capture...");
+                console.log("🎨 Trying canvas capture - should include camera background...");
+                
+                // Force a render frame to make sure we're capturing current content
+                if (scene && scene.renderer) {
+                  scene.renderer.render(scene.object3D, scene.camera);
+                }
+                
+                // The A-Frame canvas should contain both camera and AR content
                 stream = canvas.captureStream(30);
                 
                 // Test the canvas stream
                 if (stream && stream.getVideoTracks().length > 0) {
                   console.log("✅ Canvas stream working");
+                  // Check if the canvas actually has content and debug what we're capturing
+                  console.log(`📐 Canvas: ${canvas.width}x${canvas.height}`);
+                  
+                  // Create a small test canvas to see what we're capturing
+                  try {
+                    const testCanvas = document.createElement('canvas');
+                    testCanvas.width = 100;
+                    testCanvas.height = 100;
+                    const testCtx = testCanvas.getContext('2d');
+                    testCtx.drawImage(canvas, 0, 0, 100, 100);
+                    
+                    // Check if we got anything (not just black)
+                    const imageData = testCtx.getImageData(0, 0, 100, 100);
+                    const pixels = imageData.data;
+                    let hasContent = false;
+                    for (let i = 0; i < pixels.length; i += 4) {
+                      if (pixels[i] > 0 || pixels[i+1] > 0 || pixels[i+2] > 0) {
+                        hasContent = true;
+                        break;
+                      }
+                    }
+                    console.log(`�️ Canvas has content: ${hasContent}`);
+                  } catch (testError) {
+                    console.log("🖼️ Canvas content test failed (WebGL):", testError.message);
+                  }
                 } else {
-                  throw new Error("Canvas stream failed");
+                  console.warn("Canvas stream failed, trying composite approach...");
+                  stream = null; // Clear failed stream
                 }
-              } else {
+              }
+              
+              // Only do composite if canvas capture failed
+              if (!stream || !stream.getVideoTracks().length) {
                 // Last resort: try to get camera stream and composite manually
                 console.log("🔄 Attempting camera + canvas composite...");
                 
