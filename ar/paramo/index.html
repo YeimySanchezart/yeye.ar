@@ -871,30 +871,43 @@
         
         if (!isRecording) {
           try {
-            // Try canvas capture first (better for AR/WebGL content)
-            const canvas = document.querySelector("canvas");
+            // For AR experiences, we need the full page including camera
             let stream;
             
-            if (canvas && canvas.captureStream) {
-              // Capture WebGL canvas directly
-              stream = canvas.captureStream(30); // 30 FPS
-              console.log("🎨 Using canvas capture");
-            } else {
-              // Fallback to display media (desktop browsers)
-              try {
-                stream = await navigator.mediaDevices.getDisplayMedia({
-                  video: {
-                    mediaSource: "screen",
-                    width: { ideal: 1280 },
-                    height: { ideal: 720 },
-                    frameRate: { ideal: 30 }
-                  },
-                  audio: false
-                });
-                console.log("🖥️ Using display capture");
-              } catch (displayError) {
-                // Final fallback: ask user to use built-in screen recording
-                console.warn("❌ Display capture failed:", displayError);
+            try {
+              // Try display media first (captures everything including camera)
+              stream = await navigator.mediaDevices.getDisplayMedia({
+                video: {
+                  mediaSource: "screen",
+                  width: { ideal: 1280 },
+                  height: { ideal: 720 },
+                  frameRate: { ideal: 30 }
+                },
+                audio: false,
+                selfBrowserSurface: "include", // Include current tab
+                surfaceSwitching: "exclude"    // Don't allow switching surfaces
+              });
+              console.log("🖥️ Using display capture for full AR experience");
+              
+              // Add event listener for when user stops sharing
+              stream.getVideoTracks()[0].addEventListener('ended', () => {
+                if (isRecording) {
+                  // User stopped sharing, stop recording
+                  toggleRecording();
+                }
+              });
+              
+            } catch (displayError) {
+              console.warn("❌ Display capture failed:", displayError);
+              
+              // Fallback: Try canvas capture (WebGL only, no camera)
+              const canvas = document.querySelector("canvas");
+              if (canvas && canvas.captureStream) {
+                stream = canvas.captureStream(30);
+                console.log("🎨 Fallback: Using canvas capture (AR only, no camera background)");
+                alert("Note: Recording will show AR content only, not the camera background. For full AR recording with camera, please use your device's built-in screen recording.");
+              } else {
+                // Final fallback: guide user to built-in recording
                 alert("Screen recording not available in this browser. Please use your device's built-in screen recording feature:\n\niOS: Control Center > Screen Recording\nAndroid: Quick Settings > Screen Record\nDesktop: Use browser's built-in recording or system tools");
                 return;
               }
@@ -939,7 +952,12 @@
             recordBtn.classList.add("recording");
             recordBtn.title = "Stop Recording";
             
-            console.log("🔴 Recording started");
+            // Show appropriate message based on capture method
+            if (stream.getVideoTracks()[0].label.includes('screen')) {
+              console.log("🔴 Recording full AR experience with camera");
+            } else {
+              console.log("🔴 Recording AR content only (no camera background)");
+            }
 
           } catch (error) {
             console.error("❌ Failed to start recording:", error);
