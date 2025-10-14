@@ -570,24 +570,24 @@
                 // Video configuration map for chroma key settings
                 const videoConfig = {
                   "bush-video": {
-                    chromaType: "teal",
-                    color: "#064a47", // RGB(6, 74, 71) converted to hex
-                    threshold: 0.8, // Moderate threshold
-                    smoothing: 0, // Very small smoothing
+                    chromaType: "magenta",
+                    color: "#FF00FF", // Pure magenta
+                    threshold: 0.1, // Low threshold for precise keying
+                    smoothing: 0, // Sharp edges
                     maskToBg: false, // Bush appears in foreground
                   },
                   "title-video": {
-                    chromaType: "cyan",
-                    color: "#8cceca", // RGB(140, 206, 202) converted to hex
-                    threshold: 0.01, // Moderate threshold
-                    smoothing: 0, // Very small smoothing
+                    chromaType: "magenta",
+                    color: "#FF00FF", // Pure magenta
+                    threshold: 0.1, // Low threshold for precise keying
+                    smoothing: 0, // Sharp edges
                     maskToBg: false, // Title appears over everything
                   },
                   "clouds-video": {
-                    chromaType: "cyan",
-                    color: "#8cceca", // RGB(140, 206, 202) converted to hex
-                    threshold: 0.3, // Moderate threshold
-                    smoothing: 0, // Very small smoothing
+                    chromaType: "magenta",
+                    color: "#FF00FF", // Pure magenta
+                    threshold: 0.1, // Low threshold for precise keying
+                    smoothing: 0, // Sharp edges
                     depthMask: false, // Remove depth masking - use background masking instead
                     backgroundMask: true, // Only appear over background image
                   },

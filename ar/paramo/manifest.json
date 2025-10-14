@@ -44,7 +44,7 @@
     {
       "id": "title-video",
       "url": {
-        "webm": "assets/PARAMOTITLE.WEBM"
+        "mp4": "assets/title.mp4"
       },
       "zIndex": 3,
       "position": [
@@ -53,8 +53,8 @@
         0.15
       ],
       "scale": [
-        0.76,
-        0.185,
+        1.0,
+        0.243,
         1
       ],
       "opacity": 0.9,
@@ -63,7 +63,7 @@
     {
       "id": "clouds-video",
       "url": {
-        "webm": "assets/CLOUDS.WEBM"
+        "mp4": "assets/clouds.mp4"
       },
       "zIndex": 4,
       "position": [
@@ -82,7 +82,7 @@
     {
       "id": "bush-video",
       "url": {
-        "webm": "assets/BUSH.webm"
+        "mp4": "assets/bush.mp4"
       },
       "zIndex": 5,
       "position": [
@@ -92,7 +92,7 @@
       ],
       "scale": [
         1.1625,
-        0.804,
+        0.805,
         1
       ],
       "opacity": 0.9,
