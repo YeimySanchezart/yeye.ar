@@ -571,30 +571,30 @@
                 const videoConfig = {
                   "bush-video": {
                     chromaType: "teal",
-                    color: "rgb(6, 74, 71)",
-                    threshold: 0.39,
+                    color: "#064a47", // RGB(6, 74, 71) converted to hex
+                    threshold: 0.2,   // Lower threshold for better keying
                     smoothing: 0, // Absolute zero smoothing - sharpest possible edges
                     maskToBg: false, // Bush appears in foreground
                   },
                   "title-video": {
                     chromaType: "cyan",
-                    color: "rgb(140, 206, 202)",
-                    threshold: 0.4,
+                    color: "#8cceca", // RGB(140, 206, 202) converted to hex
+                    threshold: 0.2,   // Lower threshold for better keying
                     smoothing: 0, // Absolute zero smoothing - sharpest possible edges
                     maskToBg: false, // Title appears over everything
                   },
                   "clouds-video": {
                     chromaType: "cyan",
-                    color: "rgb(140, 206, 202)",
-                    threshold: 0.38,
+                    color: "#8cceca", // RGB(140, 206, 202) converted to hex
+                    threshold: 0.2,   // Lower threshold for better keying
                     smoothing: 0, // Absolute zero smoothing - sharpest possible edges
                     depthMask: false, // Remove depth masking - use background masking instead
                     backgroundMask: true, // Only appear over background image
                   },
                   "mountains-video": {
                     chromaType: "black",
-                    color: "rgb(0, 0, 0)",
-                    threshold: 0.4,
+                    color: "#000000",
+                    threshold: 0.2,   // Lower threshold for better keying
                     smoothing: 0, // Absolute zero smoothing - sharpest possible edges
                     maskToBg: false, // Mountains appear normally
                   },
