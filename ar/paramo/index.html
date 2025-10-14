@@ -504,12 +504,12 @@
                 // Create video element
                 assetEl = document.createElement("video");
                 assetEl.src = `${finalUrl}?v=${cacheBuster}`;
-                assetEl.setAttribute("autoplay", "true");
+                assetEl.setAttribute("autoplay", "false"); // Don't autoplay, we'll control this
                 assetEl.setAttribute("loop", "true");
                 assetEl.setAttribute("muted", "true");
                 assetEl.setAttribute("playsinline", "true");
                 assetEl.setAttribute("crossorigin", "anonymous");
-                assetEl.setAttribute("preload", "metadata");
+                assetEl.setAttribute("preload", "auto"); // Preload full video for better sync
 
                 // Simplified video event listeners
                 assetEl.addEventListener("loadeddata", () => {
@@ -653,21 +653,62 @@
             }
           });
 
-          // Initialize AR experience after brief delay
-          setTimeout(() => {
-            loadingEl.classList.add("hidden");
-            console.log("✅ AR experience ready!");
-
-            // Start any paused videos
+          // Wait for all videos to be ready before showing the scene
+          const waitForAllVideosReady = async () => {
             const videos = document.querySelectorAll("video");
-            videos.forEach((video) => {
-              if (video.paused) {
-                video.play().catch((error) => {
-                  console.warn("⚠️ Could not start video:", video.id, error);
-                });
-              }
+            const videoPromises = Array.from(videos).map((video) => {
+              return new Promise((resolve) => {
+                if (video.readyState >= 3) { // HAVE_FUTURE_DATA
+                  resolve();
+                } else {
+                  const onReady = () => {
+                    video.removeEventListener("canplay", onReady);
+                    video.removeEventListener("loadeddata", onReady);
+                    resolve();
+                  };
+                  video.addEventListener("canplay", onReady);
+                  video.addEventListener("loadeddata", onReady);
+                  
+                  // Fallback timeout
+                  setTimeout(resolve, 3000);
+                }
+              });
             });
-          }, 1000);
+
+            try {
+              await Promise.all(videoPromises);
+              console.log("🎬 All videos ready!");
+            } catch (error) {
+              console.warn("⚠️ Some videos not ready, continuing...", error);
+            }
+
+            // Hide all AR elements initially to prevent flashing
+            const arElements = targetRoot.querySelectorAll("a-video, a-image");
+            arElements.forEach(el => {
+              el.setAttribute("visible", "false");
+            });
+
+            // Start all videos simultaneously
+            const startPromises = Array.from(videos).map((video) => {
+              return video.play().catch((error) => {
+                console.warn("⚠️ Could not start video:", video.id, error);
+              });
+            });
+
+            await Promise.all(startPromises);
+            
+            // Small delay for synchronization, then show everything at once
+            setTimeout(() => {
+              arElements.forEach(el => {
+                el.setAttribute("visible", "true");
+              });
+              loadingEl.classList.add("hidden");
+              console.log("✅ AR experience ready and synchronized!");
+            }, 200);
+          };
+
+          // Initialize the synchronized experience
+          waitForAllVideosReady();
         } catch (error) {
           console.error("❌ Failed to load AR experience:", error);
           document.getElementById("loading").classList.add("hidden");
