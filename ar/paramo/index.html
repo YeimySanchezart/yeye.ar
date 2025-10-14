@@ -888,6 +888,11 @@
               });
               console.log("🖥️ Using screen capture for full AR experience");
               
+              // Test if the stream is actually working
+              if (!stream || !stream.getVideoTracks().length) {
+                throw new Error("Display capture produced invalid stream");
+              }
+              
               // Add event listener for when user stops sharing
               stream.getVideoTracks()[0].addEventListener('ended', () => {
                 if (isRecording) {
@@ -896,55 +901,115 @@
               });
               
             } catch (displayError) {
-              console.warn("Screen capture failed, creating composite recording...");
+              console.warn("Screen capture failed:", displayError.message);
               
-              // Create composite recording: camera + AR canvas
+              // Try simple canvas recording first
               const canvas = document.querySelector("canvas");
-              const video = document.querySelector("video"); // Camera video element
-              
-              if (!canvas || !video) {
-                throw new Error("Cannot find canvas or camera video for composite recording");
+              if (canvas && canvas.captureStream) {
+                console.log("🎨 Trying direct canvas capture...");
+                stream = canvas.captureStream(30);
+                
+                // Test the canvas stream
+                if (stream && stream.getVideoTracks().length > 0) {
+                  console.log("✅ Canvas stream working");
+                } else {
+                  throw new Error("Canvas stream failed");
+                }
+              } else {
+                // Last resort: try to get camera stream and composite manually
+                console.log("🔄 Attempting camera + canvas composite...");
+                
+                const video = document.querySelector("video");
+                if (!canvas || !video) {
+                  throw new Error("Cannot find canvas or camera video for recording");
+                }
+                
+                // Wait for video to be ready
+                if (video.readyState < 2) {
+                  await new Promise((resolve) => {
+                    video.addEventListener('loadeddata', resolve, { once: true });
+                  });
+                }
+                
+                // Create a larger composite canvas for better quality
+                const compositeCanvas = document.createElement('canvas');
+                compositeCanvas.width = Math.max(canvas.width, window.innerWidth);
+                compositeCanvas.height = Math.max(canvas.height, window.innerHeight);
+                const ctx = compositeCanvas.getContext('2d');
+                
+                console.log(`📐 Composite canvas: ${compositeCanvas.width}x${compositeCanvas.height}`);
+                
+                let animationId;
+                
+                // Animation function to composite camera + AR
+                function drawComposite() {
+                  if (!isRecording) {
+                    cancelAnimationFrame(animationId);
+                    return;
+                  }
+                  
+                  try {
+                    // Clear canvas
+                    ctx.clearRect(0, 0, compositeCanvas.width, compositeCanvas.height);
+                    
+                    // Draw camera feed as background (scaled to fit)
+                    ctx.drawImage(video, 0, 0, compositeCanvas.width, compositeCanvas.height);
+                    
+                    // Draw AR canvas on top (maintain aspect ratio)
+                    ctx.drawImage(canvas, 0, 0, compositeCanvas.width, compositeCanvas.height);
+                    
+                  } catch (drawError) {
+                    console.warn("Draw frame error:", drawError);
+                  }
+                  
+                  // Continue animation
+                  animationId = requestAnimationFrame(drawComposite);
+                }
+                
+                // Start composite drawing immediately
+                drawComposite();
+                
+                // Capture the composite canvas
+                stream = compositeCanvas.captureStream(25); // Slightly lower FPS for stability
+                
+                if (!stream || !stream.getVideoTracks().length) {
+                  throw new Error("Composite canvas stream failed");
+                }
+                
+                console.log("🎨 Using composite recording (camera + AR)");
               }
-              
-              // Create a new canvas for compositing
-              const compositeCanvas = document.createElement('canvas');
-              compositeCanvas.width = window.innerWidth;
-              compositeCanvas.height = window.innerHeight;
-              const ctx = compositeCanvas.getContext('2d');
-              
-              // Animation function to composite camera + AR
-              function drawComposite() {
-                if (!isRecording) return;
-                
-                // Clear canvas
-                ctx.clearRect(0, 0, compositeCanvas.width, compositeCanvas.height);
-                
-                // Draw camera feed as background
-                ctx.drawImage(video, 0, 0, compositeCanvas.width, compositeCanvas.height);
-                
-                // Draw AR canvas on top
-                ctx.drawImage(canvas, 0, 0, compositeCanvas.width, compositeCanvas.height);
-                
-                // Continue animation
-                requestAnimationFrame(drawComposite);
-              }
-              
-              // Start composite drawing
-              drawComposite();
-              
-              // Capture the composite canvas
-              stream = compositeCanvas.captureStream(30);
-              console.log("🎨 Using composite recording (camera + AR)");
             }
 
-            // Set up MediaRecorder
-            const options = { mimeType: 'video/webm;codecs=vp9' };
+            // Validate stream before creating MediaRecorder
+            if (!stream || !stream.getVideoTracks().length) {
+              throw new Error("Invalid stream - no video tracks available");
+            }
+            
+            const videoTrack = stream.getVideoTracks()[0];
+            if (videoTrack.readyState !== 'live') {
+              console.warn("⚠️ Video track not live:", videoTrack.readyState);
+            }
+            
+            console.log(`🎥 Stream info: ${stream.getVideoTracks().length} video tracks, state: ${videoTrack.readyState}`);
+
+            // Set up MediaRecorder with better codec fallbacks
+            let options = { mimeType: 'video/webm;codecs=vp9' };
             if (!MediaRecorder.isTypeSupported(options.mimeType)) {
               options.mimeType = 'video/webm;codecs=vp8';
               if (!MediaRecorder.isTypeSupported(options.mimeType)) {
                 options.mimeType = 'video/webm';
+                if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+                  // Try MP4 as last resort
+                  options.mimeType = 'video/mp4';
+                  if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+                    // Remove codec specification and try basic
+                    options = {};
+                  }
+                }
               }
             }
+            
+            console.log(`🔧 Using MediaRecorder with: ${options.mimeType || 'default'}`);
 
             mediaRecorder = new MediaRecorder(stream, options);
             recordedChunks = [];
@@ -1012,7 +1077,24 @@
               }
             };
 
+            // Test MediaRecorder state before starting
+            console.log(`📹 MediaRecorder state: ${mediaRecorder.state}`);
+            
             mediaRecorder.start(100); // Collect data every 100ms
+            
+            // Verify it actually started
+            setTimeout(() => {
+              console.log(`📹 MediaRecorder state after start: ${mediaRecorder.state}`);
+              if (mediaRecorder.state !== 'recording') {
+                console.error("❌ MediaRecorder failed to start recording");
+                alert("Recording failed to start. Please try again or use your device's built-in screen recording.");
+                isRecording = false;
+                recordBtn.classList.remove("recording");
+                recordBtn.title = "Record AR Experience";
+                return;
+              }
+            }, 200);
+            
             isRecording = true;
             recordBtn.classList.add("recording");
             recordBtn.title = "Stop Recording";
