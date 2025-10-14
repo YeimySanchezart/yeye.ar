@@ -199,9 +199,9 @@
                 void main() {
                   vec4 textureColor = texture2D(map, vUv);
 
-                  // Chroma key transparency - invert logic to remove chroma color
+                  // Chroma key transparency
                   float distance = length(textureColor.rgb - chromaColor);
-                  float chromaAlpha = 1.0 - smoothstep(threshold - smoothing, threshold + smoothing, distance);
+                  float chromaAlpha = smoothstep(threshold - smoothing, threshold + smoothing, distance);
 
                   // Optional background masking - only appear over background bounds
                   float bgAlpha = 1.0;
@@ -572,30 +572,30 @@
                   "bush-video": {
                     chromaType: "teal",
                     color: "#064a47", // RGB(6, 74, 71) converted to hex
-                    threshold: 0.2, // Lower threshold for better keying
-                    smoothing: 0, // Absolute zero smoothing - sharpest possible edges
+                    threshold: 0.8, // Higher threshold for better keying
+                    smoothing: 0.1, // Small amount of smoothing for cleaner edges
                     maskToBg: false, // Bush appears in foreground
                   },
                   "title-video": {
                     chromaType: "cyan",
                     color: "#8cceca", // RGB(140, 206, 202) converted to hex
-                    threshold: 0.2, // Lower threshold for better keying
-                    smoothing: 0, // Absolute zero smoothing - sharpest possible edges
+                    threshold: 0.8, // Higher threshold for better keying
+                    smoothing: 0.1, // Small amount of smoothing for cleaner edges
                     maskToBg: false, // Title appears over everything
                   },
                   "clouds-video": {
                     chromaType: "cyan",
                     color: "#8cceca", // RGB(140, 206, 202) converted to hex
-                    threshold: 0.2, // Lower threshold for better keying
-                    smoothing: 0, // Absolute zero smoothing - sharpest possible edges
+                    threshold: 0.8, // Higher threshold for better keying
+                    smoothing: 0.1, // Small amount of smoothing for cleaner edges
                     depthMask: false, // Remove depth masking - use background masking instead
                     backgroundMask: true, // Only appear over background image
                   },
                   "mountains-video": {
                     chromaType: "black",
                     color: "#000000",
-                    threshold: 0.2, // Lower threshold for better keying
-                    smoothing: 0, // Absolute zero smoothing - sharpest possible edges
+                    threshold: 0.8, // Higher threshold for better keying
+                    smoothing: 0.1, // Small amount of smoothing for cleaner edges
                     maskToBg: false, // Mountains appear normally
                   },
                 };
