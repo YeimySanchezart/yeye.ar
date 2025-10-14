@@ -871,15 +871,45 @@
         
         if (!isRecording) {
           try {
-            // Start recording
-            const stream = await navigator.mediaDevices.getDisplayMedia({
-              video: {
-                mediaSource: "screen"
-              },
-              audio: false // No audio to avoid feedback
-            });
+            // Try canvas capture first (better for AR/WebGL content)
+            const canvas = document.querySelector("canvas");
+            let stream;
+            
+            if (canvas && canvas.captureStream) {
+              // Capture WebGL canvas directly
+              stream = canvas.captureStream(30); // 30 FPS
+              console.log("🎨 Using canvas capture");
+            } else {
+              // Fallback to display media (desktop browsers)
+              try {
+                stream = await navigator.mediaDevices.getDisplayMedia({
+                  video: {
+                    mediaSource: "screen",
+                    width: { ideal: 1280 },
+                    height: { ideal: 720 },
+                    frameRate: { ideal: 30 }
+                  },
+                  audio: false
+                });
+                console.log("🖥️ Using display capture");
+              } catch (displayError) {
+                // Final fallback: ask user to use built-in screen recording
+                console.warn("❌ Display capture failed:", displayError);
+                alert("Screen recording not available in this browser. Please use your device's built-in screen recording feature:\n\niOS: Control Center > Screen Recording\nAndroid: Quick Settings > Screen Record\nDesktop: Use browser's built-in recording or system tools");
+                return;
+              }
+            }
 
-            mediaRecorder = new MediaRecorder(stream);
+            // Set up MediaRecorder
+            const options = { mimeType: 'video/webm;codecs=vp9' };
+            if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+              options.mimeType = 'video/webm;codecs=vp8';
+              if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+                options.mimeType = 'video/webm';
+              }
+            }
+
+            mediaRecorder = new MediaRecorder(stream, options);
             recordedChunks = [];
 
             mediaRecorder.ondataavailable = (event) => {
@@ -889,7 +919,7 @@
             };
 
             mediaRecorder.onstop = () => {
-              const blob = new Blob(recordedChunks, { type: "video/webm" });
+              const blob = new Blob(recordedChunks, { type: options.mimeType });
               const url = URL.createObjectURL(blob);
               
               // Create download link
@@ -904,7 +934,7 @@
               console.log("📹 Recording saved!");
             };
 
-            mediaRecorder.start();
+            mediaRecorder.start(100); // Collect data every 100ms
             isRecording = true;
             recordBtn.classList.add("recording");
             recordBtn.title = "Stop Recording";
@@ -913,13 +943,15 @@
 
           } catch (error) {
             console.error("❌ Failed to start recording:", error);
-            alert("Screen recording not supported or permission denied");
+            alert("Recording failed. Please use your device's built-in screen recording:\n\niOS: Control Center > Screen Recording\nAndroid: Quick Settings > Screen Record");
           }
         } else {
           // Stop recording
           if (mediaRecorder && mediaRecorder.state === "recording") {
             mediaRecorder.stop();
-            mediaRecorder.stream.getTracks().forEach(track => track.stop());
+            if (mediaRecorder.stream) {
+              mediaRecorder.stream.getTracks().forEach(track => track.stop());
+            }
           }
           
           isRecording = false;
