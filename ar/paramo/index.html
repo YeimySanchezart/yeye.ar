@@ -573,21 +573,21 @@
                     chromaType: "teal",
                     color: "#064a47", // RGB(6, 74, 71) converted to hex
                     threshold: 0.8, // Moderate threshold
-                    smoothing: 0.05, // Very small smoothing
+                    smoothing: 0, // Very small smoothing
                     maskToBg: false, // Bush appears in foreground
                   },
                   "title-video": {
                     chromaType: "cyan",
                     color: "#8cceca", // RGB(140, 206, 202) converted to hex
                     threshold: 0.01, // Moderate threshold
-                    smoothing: 0.05, // Very small smoothing
+                    smoothing: 0, // Very small smoothing
                     maskToBg: false, // Title appears over everything
                   },
                   "clouds-video": {
                     chromaType: "cyan",
                     color: "#8cceca", // RGB(140, 206, 202) converted to hex
-                    threshold: 0.01, // Moderate threshold
-                    smoothing: 0.05, // Very small smoothing
+                    threshold: 0.3, // Moderate threshold
+                    smoothing: 0, // Very small smoothing
                     depthMask: false, // Remove depth masking - use background masking instead
                     backgroundMask: true, // Only appear over background image
                   },
@@ -595,7 +595,7 @@
                     chromaType: "black",
                     color: "#000000",
                     threshold: 0.01, // Slightly higher for black
-                    smoothing: 0.05, // Very small smoothing
+                    smoothing: 0, // Very small smoothing
                     maskToBg: false, // Mountains appear normally
                   },
                 };
