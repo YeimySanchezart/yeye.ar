@@ -679,6 +679,9 @@
                 `enabled: true; baseDepth: ${zPos}; depthScale: 0.4; smoothing: 0.85`
               );
 
+              // Start invisible to prevent black frames during loading
+              mediaEl.setAttribute("visible", "false");
+
               targetRoot.appendChild(mediaEl);
               console.log(
                 `✅ Added overlay: ${overlay.id} with depth parallax`
@@ -721,11 +724,8 @@
               console.warn("⚠️ Some videos not ready, continuing...", error);
             }
 
-            // Hide all AR elements initially to prevent flashing
+            // Get all AR elements for final reveal
             const arElements = targetRoot.querySelectorAll("a-video, a-image");
-            arElements.forEach((el) => {
-              el.setAttribute("visible", "false");
-            });
 
             // Start all videos simultaneously
             const startPromises = Array.from(videos).map((video) => {
