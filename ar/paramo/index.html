@@ -919,16 +919,78 @@
                 // Last resort: try to get camera stream and composite manually
                 console.log("🔄 Attempting camera + canvas composite...");
                 
-                const video = document.querySelector("video");
+                // MindAR creates its own video element for the camera feed
+                // Look for it in different possible locations
+                let video = document.querySelector("video[autoplay]") || 
+                           document.querySelector("video[playsinline]") ||
+                           document.querySelector("#arjs-video") ||
+                           document.querySelector(".a-canvas video") ||
+                           document.querySelector("video");
+                
+                // If no video found, try to find it in the A-Frame scene
+                if (!video) {
+                  const scene = document.querySelector("a-scene");
+                  if (scene && scene.renderer && scene.renderer.xr) {
+                    // Try to find the video in the WebXR/AR context
+                    video = scene.querySelector("video") || 
+                           scene.shadowRoot?.querySelector("video");
+                  }
+                }
+                
+                // Last attempt: look for any video element that might be the camera
+                if (!video) {
+                  const allVideos = document.querySelectorAll("video");
+                  console.log(`🔍 Found ${allVideos.length} video elements`);
+                  
+                  for (let v of allVideos) {
+                    console.log(`📹 Video: ${v.src || 'no src'}, autoplay: ${v.autoplay}, width: ${v.videoWidth}x${v.videoHeight}`);
+                    if (v.videoWidth > 0 && v.videoHeight > 0) {
+                      video = v;
+                      break;
+                    }
+                  }
+                }
+                
                 if (!canvas || !video) {
                   throw new Error("Cannot find canvas or camera video for recording");
                 }
                 
+                console.log(`📹 Using video: ${video.videoWidth}x${video.videoHeight}, src: ${video.src || 'camera stream'}`);
+                
                 // Wait for video to be ready
                 if (video.readyState < 2) {
+                  console.log("⏳ Waiting for video to load...");
                   await new Promise((resolve) => {
                     video.addEventListener('loadeddata', resolve, { once: true });
+                    // Timeout after 3 seconds
+                    setTimeout(resolve, 3000);
                   });
+                }
+                
+                // Final check - if still no video dimensions, try to get camera stream directly
+                if (video.videoWidth === 0 || video.videoHeight === 0) {
+                  console.log("🎥 Video has no dimensions, trying direct camera access...");
+                  try {
+                    const cameraStream = await navigator.mediaDevices.getUserMedia({
+                      video: { facingMode: 'environment' }
+                    });
+                    
+                    // Create a new video element for the camera
+                    const cameraVideo = document.createElement('video');
+                    cameraVideo.srcObject = cameraStream;
+                    cameraVideo.autoplay = true;
+                    cameraVideo.muted = true;
+                    cameraVideo.playsInline = true;
+                    
+                    await new Promise((resolve) => {
+                      cameraVideo.addEventListener('loadeddata', resolve, { once: true });
+                    });
+                    
+                    video = cameraVideo; // Use our camera video instead
+                    console.log(`📹 Direct camera: ${video.videoWidth}x${video.videoHeight}`);
+                  } catch (cameraError) {
+                    console.warn("Direct camera access failed:", cameraError);
+                  }
                 }
                 
                 // Create a larger composite canvas for better quality
@@ -949,13 +1011,40 @@
                   }
                   
                   try {
-                    // Clear canvas
-                    ctx.clearRect(0, 0, compositeCanvas.width, compositeCanvas.height);
+                    // Clear canvas with black background
+                    ctx.fillStyle = '#000000';
+                    ctx.fillRect(0, 0, compositeCanvas.width, compositeCanvas.height);
                     
-                    // Draw camera feed as background (scaled to fit)
-                    ctx.drawImage(video, 0, 0, compositeCanvas.width, compositeCanvas.height);
+                    // Check if video has valid dimensions
+                    if (video.videoWidth > 0 && video.videoHeight > 0) {
+                      // Calculate aspect ratios
+                      const videoAspect = video.videoWidth / video.videoHeight;
+                      const canvasAspect = compositeCanvas.width / compositeCanvas.height;
+                      
+                      let drawWidth, drawHeight, drawX, drawY;
+                      
+                      if (videoAspect > canvasAspect) {
+                        // Video is wider - fit to canvas width
+                        drawWidth = compositeCanvas.width;
+                        drawHeight = compositeCanvas.width / videoAspect;
+                        drawX = 0;
+                        drawY = (compositeCanvas.height - drawHeight) / 2;
+                      } else {
+                        // Video is taller - fit to canvas height
+                        drawHeight = compositeCanvas.height;
+                        drawWidth = compositeCanvas.height * videoAspect;
+                        drawY = 0;
+                        drawX = (compositeCanvas.width - drawWidth) / 2;
+                      }
+                      
+                      // Draw camera feed as background with proper aspect ratio
+                      ctx.drawImage(video, drawX, drawY, drawWidth, drawHeight);
+                    } else {
+                      console.warn("⚠️ Video has no dimensions:", video.videoWidth, video.videoHeight);
+                    }
                     
-                    // Draw AR canvas on top (maintain aspect ratio)
+                    // Draw AR canvas on top with transparency
+                    ctx.globalCompositeOperation = 'source-over';
                     ctx.drawImage(canvas, 0, 0, compositeCanvas.width, compositeCanvas.height);
                     
                   } catch (drawError) {
