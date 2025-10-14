@@ -871,7 +871,6 @@
         
         if (!isRecording) {
           try {
-            // For AR experiences, we need the full page including camera
             let stream;
             
             try {
@@ -884,33 +883,58 @@
                   frameRate: { ideal: 30 }
                 },
                 audio: false,
-                selfBrowserSurface: "include", // Include current tab
-                surfaceSwitching: "exclude"    // Don't allow switching surfaces
+                selfBrowserSurface: "include",
+                surfaceSwitching: "exclude"
               });
-              console.log("🖥️ Using display capture for full AR experience");
+              console.log("🖥️ Using screen capture for full AR experience");
               
               // Add event listener for when user stops sharing
               stream.getVideoTracks()[0].addEventListener('ended', () => {
                 if (isRecording) {
-                  // User stopped sharing, stop recording
                   toggleRecording();
                 }
               });
               
             } catch (displayError) {
-              console.warn("❌ Display capture failed:", displayError);
+              console.warn("Screen capture failed, creating composite recording...");
               
-              // Fallback: Try canvas capture (WebGL only, no camera)
+              // Create composite recording: camera + AR canvas
               const canvas = document.querySelector("canvas");
-              if (canvas && canvas.captureStream) {
-                stream = canvas.captureStream(30);
-                console.log("🎨 Fallback: Using canvas capture (AR only, no camera background)");
-                alert("Note: Recording will show AR content only, not the camera background. For full AR recording with camera, please use your device's built-in screen recording.");
-              } else {
-                // Final fallback: guide user to built-in recording
-                alert("Screen recording not available in this browser. Please use your device's built-in screen recording feature:\n\niOS: Control Center > Screen Recording\nAndroid: Quick Settings > Screen Record\nDesktop: Use browser's built-in recording or system tools");
-                return;
+              const video = document.querySelector("video"); // Camera video element
+              
+              if (!canvas || !video) {
+                throw new Error("Cannot find canvas or camera video for composite recording");
               }
+              
+              // Create a new canvas for compositing
+              const compositeCanvas = document.createElement('canvas');
+              compositeCanvas.width = window.innerWidth;
+              compositeCanvas.height = window.innerHeight;
+              const ctx = compositeCanvas.getContext('2d');
+              
+              // Animation function to composite camera + AR
+              function drawComposite() {
+                if (!isRecording) return;
+                
+                // Clear canvas
+                ctx.clearRect(0, 0, compositeCanvas.width, compositeCanvas.height);
+                
+                // Draw camera feed as background
+                ctx.drawImage(video, 0, 0, compositeCanvas.width, compositeCanvas.height);
+                
+                // Draw AR canvas on top
+                ctx.drawImage(canvas, 0, 0, compositeCanvas.width, compositeCanvas.height);
+                
+                // Continue animation
+                requestAnimationFrame(drawComposite);
+              }
+              
+              // Start composite drawing
+              drawComposite();
+              
+              // Capture the composite canvas
+              stream = compositeCanvas.captureStream(30);
+              console.log("🎨 Using composite recording (camera + AR)");
             }
 
             // Set up MediaRecorder
@@ -952,12 +976,7 @@
             recordBtn.classList.add("recording");
             recordBtn.title = "Stop Recording";
             
-            // Show appropriate message based on capture method
-            if (stream.getVideoTracks()[0].label.includes('screen')) {
-              console.log("🔴 Recording full AR experience with camera");
-            } else {
-              console.log("🔴 Recording AR content only (no camera background)");
-            }
+            console.log("🔴 Recording AR experience with camera");
 
           } catch (error) {
             console.error("❌ Failed to start recording:", error);
