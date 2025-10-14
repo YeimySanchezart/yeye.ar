@@ -199,9 +199,9 @@
                 void main() {
                   vec4 textureColor = texture2D(map, vUv);
 
-                  // Chroma key transparency
+                  // Chroma key transparency - hard cutoff for complete transparency
                   float distance = length(textureColor.rgb - chromaColor);
-                  float chromaAlpha = smoothstep(threshold - smoothing, threshold + smoothing, distance);
+                  float chromaAlpha = distance > threshold ? 1.0 : 0.0;
 
                   // Optional background masking - only appear over background bounds
                   float bgAlpha = 1.0;
