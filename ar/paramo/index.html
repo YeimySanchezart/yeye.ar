@@ -570,24 +570,24 @@
                 // Video configuration map for chroma key settings
                 const videoConfig = {
                   "bush-video": {
-                    chromaType: "green",
-                    color: "rgb(129, 251, 97)",
+                    chromaType: "teal",
+                    color: "rgb(6, 74, 71)",
                     threshold: 0.39,
-                    smoothing: 0.02, // Much sharper edges for cleaner cutout
+                    smoothing: 0, // Absolute zero smoothing - sharpest possible edges
                     maskToBg: false, // Bush appears in foreground
                   },
                   "title-video": {
-                    chromaType: "green",
-                    color: "rgb(129, 251, 97)",
+                    chromaType: "cyan",
+                    color: "rgb(140, 206, 202)",
                     threshold: 0.4,
-                    smoothing: 0, // Absolute zero smoothing - hardest possible edges
+                    smoothing: 0, // Absolute zero smoothing - sharpest possible edges
                     maskToBg: false, // Title appears over everything
                   },
                   "clouds-video": {
-                    chromaType: "blue",
-                    color: "rgb(165, 202, 223)",
+                    chromaType: "cyan",
+                    color: "rgb(140, 206, 202)",
                     threshold: 0.38,
-                    smoothing: 0.1,
+                    smoothing: 0, // Absolute zero smoothing - sharpest possible edges
                     depthMask: false, // Remove depth masking - use background masking instead
                     backgroundMask: true, // Only appear over background image
                   },
@@ -595,7 +595,7 @@
                     chromaType: "black",
                     color: "rgb(0, 0, 0)",
                     threshold: 0.4,
-                    smoothing: 0.1,
+                    smoothing: 0, // Absolute zero smoothing - sharpest possible edges
                     maskToBg: false, // Mountains appear normally
                   },
                 };
