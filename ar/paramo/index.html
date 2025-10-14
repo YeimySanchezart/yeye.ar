@@ -948,27 +948,68 @@
 
             mediaRecorder = new MediaRecorder(stream, options);
             recordedChunks = [];
+            
+            mediaRecorder.onerror = (event) => {
+              console.error("❌ MediaRecorder error:", event.error);
+              alert("Recording error occurred. Please try again.");
+            };
 
             mediaRecorder.ondataavailable = (event) => {
               if (event.data.size > 0) {
                 recordedChunks.push(event.data);
+                console.log(`📦 Data chunk: ${event.data.size} bytes (total chunks: ${recordedChunks.length})`);
+              } else {
+                console.warn("⚠️ Empty data chunk received");
               }
             };
 
             mediaRecorder.onstop = () => {
-              const blob = new Blob(recordedChunks, { type: options.mimeType });
-              const url = URL.createObjectURL(blob);
+              console.log(`📊 Recording stopped. Chunks: ${recordedChunks.length}, Total size: ${recordedChunks.reduce((sum, chunk) => sum + chunk.size, 0)} bytes`);
               
-              // Create download link
-              const a = document.createElement("a");
-              a.href = url;
-              a.download = `paramo-ar-${Date.now()}.webm`;
-              document.body.appendChild(a);
-              a.click();
-              document.body.removeChild(a);
-              URL.revokeObjectURL(url);
+              if (recordedChunks.length === 0) {
+                console.error("❌ No data recorded");
+                alert("Recording failed - no data captured. Please try again.");
+                return;
+              }
 
-              console.log("📹 Recording saved!");
+              try {
+                const blob = new Blob(recordedChunks, { type: options.mimeType });
+                console.log(`📦 Blob created: ${blob.size} bytes, type: ${blob.type}`);
+                
+                if (blob.size === 0) {
+                  console.error("❌ Empty blob created");
+                  alert("Recording failed - empty file. Please try again.");
+                  return;
+                }
+                
+                const url = URL.createObjectURL(blob);
+                
+                // Determine file extension from mime type
+                let extension = '.webm';
+                if (options.mimeType.includes('mp4')) extension = '.mp4';
+                
+                // Create download link
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = `paramo-ar-${Date.now()}${extension}`;
+                a.style.display = 'none';
+                document.body.appendChild(a);
+                
+                console.log(`💾 Triggering download: ${a.download}`);
+                a.click();
+                
+                // Clean up after a delay
+                setTimeout(() => {
+                  document.body.removeChild(a);
+                  URL.revokeObjectURL(url);
+                }, 1000);
+
+                console.log("📹 Recording saved!");
+                
+              } catch (error) {
+                console.error("❌ Download failed:", error);
+                alert("Download failed. Check console for details.");
+              }
             };
 
             mediaRecorder.start(100); // Collect data every 100ms
