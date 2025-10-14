@@ -261,7 +261,9 @@
         },
 
         init: function () {
-          this.targetEntity = this.el.sceneEl.querySelector("[mindar-image-target]");
+          this.targetEntity = this.el.sceneEl.querySelector(
+            "[mindar-image-target]"
+          );
           this.previousPosition = new THREE.Vector3();
           this.previousRotation = new THREE.Euler();
           this.basePosition = new THREE.Vector3();
@@ -287,12 +289,12 @@
 
           // Calculate parallax factor based on Z-depth
           const depth = this.basePosition.z;
-          const parallaxFactor = 1.0 - (depth * this.data.depthScale);
-          
+          const parallaxFactor = 1.0 - depth * this.data.depthScale;
+
           // Get target movement (relative to base position)
           const targetPos = new THREE.Vector3();
           targetPos.copy(this.basePosition);
-          
+
           // Apply parallax scaling to target movement
           const targetMovement = new THREE.Vector3();
           targetMovement.copy(targetObject3D.position);
@@ -308,9 +310,12 @@
 
           // Smooth interpolation to target
           this.previousPosition.lerp(targetPos, 1 - this.data.smoothing);
-          this.previousRotation.x += (targetRot.x - this.previousRotation.x) * (1 - this.data.smoothing);
-          this.previousRotation.y += (targetRot.y - this.previousRotation.y) * (1 - this.data.smoothing);
-          this.previousRotation.z += (targetRot.z - this.previousRotation.z) * (1 - this.data.smoothing);
+          this.previousRotation.x +=
+            (targetRot.x - this.previousRotation.x) * (1 - this.data.smoothing);
+          this.previousRotation.y +=
+            (targetRot.y - this.previousRotation.y) * (1 - this.data.smoothing);
+          this.previousRotation.z +=
+            (targetRot.z - this.previousRotation.z) * (1 - this.data.smoothing);
 
           // Apply smoothed values
           myObject3D.position.copy(this.previousPosition);
@@ -596,21 +601,21 @@
                   "bush-video": {
                     chromaType: "magenta",
                     color: "#FF00FF", // Pure magenta
-                    threshold: 0.5, // Low threshold for precise keying
+                    threshold: 0.7, // Higher threshold to remove more magenta
                     smoothing: 0, // Sharp edges
                     maskToBg: false, // Bush appears in foreground
                   },
                   "title-video": {
                     chromaType: "magenta",
                     color: "#FF00FF", // Pure magenta
-                    threshold: 0.5, // Low threshold for precise keying
+                    threshold: 0.7, // Higher threshold to remove more magenta
                     smoothing: 0, // Sharp edges
                     maskToBg: false, // Title appears over everything
                   },
                   "clouds-video": {
                     chromaType: "magenta",
                     color: "#FF00FF", // Pure magenta
-                    threshold: 0.5, // Low threshold for precise keying
+                    threshold: 0.7, // Higher threshold to remove more magenta
                     smoothing: 0, // Sharp edges
                     depthMask: false, // Remove depth masking - use background masking instead
                     backgroundMask: true, // Only appear over background image
@@ -669,10 +674,15 @@
 
               // Add depth-based parallax component for natural movement
               const zPos = overlay.position[2];
-              mediaEl.setAttribute("depth-parallax", `enabled: true; baseDepth: ${zPos}; depthScale: 0.4; smoothing: 0.85`);
+              mediaEl.setAttribute(
+                "depth-parallax",
+                `enabled: true; baseDepth: ${zPos}; depthScale: 0.4; smoothing: 0.85`
+              );
 
               targetRoot.appendChild(mediaEl);
-              console.log(`✅ Added overlay: ${overlay.id} with depth parallax`);
+              console.log(
+                `✅ Added overlay: ${overlay.id} with depth parallax`
+              );
             } catch (error) {
               console.error(
                 `❌ Failed to create overlay ${overlay.id}:`,
@@ -686,7 +696,8 @@
             const videos = document.querySelectorAll("video");
             const videoPromises = Array.from(videos).map((video) => {
               return new Promise((resolve) => {
-                if (video.readyState >= 3) { // HAVE_FUTURE_DATA
+                if (video.readyState >= 3) {
+                  // HAVE_FUTURE_DATA
                   resolve();
                 } else {
                   const onReady = () => {
@@ -696,7 +707,7 @@
                   };
                   video.addEventListener("canplay", onReady);
                   video.addEventListener("loadeddata", onReady);
-                  
+
                   // Fallback timeout
                   setTimeout(resolve, 3000);
                 }
@@ -712,7 +723,7 @@
 
             // Hide all AR elements initially to prevent flashing
             const arElements = targetRoot.querySelectorAll("a-video, a-image");
-            arElements.forEach(el => {
+            arElements.forEach((el) => {
               el.setAttribute("visible", "false");
             });
 
@@ -724,10 +735,10 @@
             });
 
             await Promise.all(startPromises);
-            
+
             // Small delay for synchronization, then show everything at once
             setTimeout(() => {
-              arElements.forEach(el => {
+              arElements.forEach((el) => {
                 el.setAttribute("visible", "true");
               });
               loadingEl.classList.add("hidden");
