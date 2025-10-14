@@ -617,7 +617,9 @@
                   // Apply chroma key with optional background masking
                   const chromaKeyAttrs = `color: ${config.color}; threshold: ${config.threshold}; smoothing: ${config.smoothing}`;
                   if (config.backgroundMask) {
-                    console.log(`🎭 Applying background mask to ${overlay.id} - only appear over background image`);
+                    console.log(
+                      `🎭 Applying background mask to ${overlay.id} - only appear over background image`
+                    );
                     mediaEl.setAttribute(
                       "chroma-key",
                       `${chromaKeyAttrs}; backgroundMask: true; bgScaleX: 1.1625; bgScaleY: 1.5`
@@ -625,7 +627,6 @@
                   } else {
                     mediaEl.setAttribute("chroma-key", chromaKeyAttrs);
                   }
-
                 } else {
                   // Video element with basic transparency (for non-chroma backgrounds)
                   console.log(
