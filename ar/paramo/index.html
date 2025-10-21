@@ -361,7 +361,57 @@
         `🔍 Device info: iOS=${isIOSDevice()}, UserAgent=${navigator.userAgent}`
       );
 
+      // Minimalistic audio button for when autoplay is blocked
+      function addMinimalAudioButton() {
+        // Check if button already exists
+        if (document.getElementById("minimal-audio-btn")) return;
 
+        const audioBtn = document.createElement("button");
+        audioBtn.id = "minimal-audio-btn";
+        audioBtn.innerHTML = "🔊";
+        audioBtn.style.cssText = `
+          position: fixed;
+          top: 20px;
+          right: 20px;
+          background: transparent;
+          color: white;
+          border: none;
+          padding: 8px;
+          border-radius: 50%;
+          font-size: 20px;
+          cursor: pointer;
+          z-index: 1000;
+          transition: opacity 0.3s ease;
+          opacity: 0.8;
+          text-shadow: 0 0 4px rgba(0, 0, 0, 0.8);
+        `;
+
+        audioBtn.addEventListener("click", () => {
+          const ambientAudio = document.getElementById("ambient-audio");
+          if (ambientAudio) {
+            ambientAudio.volume = 0.3;
+            ambientAudio
+              .play()
+              .then(() => {
+                console.log("🎵 Audio enabled by user interaction");
+                // Hide button after successful audio start
+                audioBtn.style.opacity = "0";
+                setTimeout(() => audioBtn.remove(), 300);
+              })
+              .catch(console.error);
+          }
+        });
+
+        // Hover effect
+        audioBtn.addEventListener("mouseenter", () => {
+          audioBtn.style.opacity = "1";
+        });
+        audioBtn.addEventListener("mouseleave", () => {
+          audioBtn.style.opacity = "0.8";
+        });
+
+        document.body.appendChild(audioBtn);
+      }
 
       // Asset preloading function with iOS compatibility
       function preloadAsset(url, type) {
@@ -784,7 +834,8 @@
                       "🔇 Audio autoplay prevented (user interaction required):",
                       error.message
                     );
-                    // Audio will remain paused until user interaction
+                    // Show minimalistic audio button when autoplay is blocked
+                    addMinimalAudioButton();
                   });
               }
 
