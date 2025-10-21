@@ -140,7 +140,7 @@
 
     <a-scene
       id="ar-scene"
-      mindar-image="imageTargetSrc: ./target.mind; autoStart: true; uiLoading: no; uiScanning: no; uiError: no; filterMinCF: 0.1; filterBeta: 0.001; warmupTolerance: 5; missTolerance: 5"
+      mindar-image="imageTargetSrc: ./target.mind; autoStart: true; uiLoading: no; uiScanning: no; uiError: no; filterMinCF: 0.001; filterBeta: 0.01; warmupTolerance: 5; missTolerance: 5"
       vr-mode-ui="enabled: false"
       device-orientation-permission-ui="enabled: false"
       renderer="alpha: true; antialias: true; colorManagement: true; physicallyCorrectLights: true; precision: highp; powerPreference: high-performance"
@@ -157,7 +157,7 @@
         id="target-root"
         mindar-image-target="targetIndex: 0"
         animation-mixer=""
-        tracking-stabilizer="enabled: true; lockDistance: 0.5; lockTransitionZone: 0.15; consistencyFrames: 4; maxJumpDistance: 0.03; stabilityMemory: 20"
+        tracking-stabilizer="enabled: true; wobbleThreshold: 0.008; smoothingStrength: 0.6; detectionFrames: 6"
 
       >
         <!-- AR content will be added here -->
@@ -392,168 +392,76 @@
         },
       });
 
-      // Distance-based position locking system - prevents wobble by locking position when too close
+      // Minimal wobble suppression - only activates when actual wobbling is detected
       AFRAME.registerComponent("tracking-stabilizer", {
         schema: {
           enabled: { type: "boolean", default: true },
-          lockDistance: { type: "number", default: 0.6 }, // Distance below which to lock position
-          lockTransitionZone: { type: "number", default: 0.2 }, // Smooth transition zone
-          consistencyFrames: { type: "number", default: 5 }, // Frames to check for consistency
-          maxJumpDistance: { type: "number", default: 0.05 }, // Max allowed position jump per frame
-          stabilityMemory: { type: "number", default: 30 }, // Frames to remember stable positions
+          wobbleThreshold: { type: "number", default: 0.01 }, // Movement threshold to detect wobbling
+          smoothingStrength: { type: "number", default: 0.7 }, // How much to smooth when wobbling
+          detectionFrames: { type: "number", default: 8 }, // Frames to analyze for wobble detection
         },
 
         init: function () {
-          this.isInitialized = false;
-          this.lockedPosition = new THREE.Vector3();
-          this.lockedRotation = new THREE.Euler();
-          this.lastValidPosition = new THREE.Vector3();
-          this.lastValidRotation = new THREE.Euler();
-          this.isLocked = false;
-          this.lockStartTime = 0;
-          
-          // Consistency tracking
           this.positionHistory = [];
-          this.rotationHistory = [];
-          this.stablePositions = [];
-          this.frameCount = 0;
-          
-          // Distance tracking
-          this.distanceHistory = [];
-          this.currentDistance = 1.0;
+          this.smoothedPosition = new THREE.Vector3();
+          this.smoothedRotation = new THREE.Euler();
+          this.isInitialized = false;
+          this.isWobbling = false;
         },
 
         tick: function () {
           if (!this.data.enabled) return;
 
           const object3D = this.el.object3D;
-          this.frameCount++;
 
           if (!this.isInitialized) {
-            this.lockedPosition.copy(object3D.position);
-            this.lockedRotation.copy(object3D.rotation);
-            this.lastValidPosition.copy(object3D.position);
-            this.lastValidRotation.copy(object3D.rotation);
+            this.smoothedPosition.copy(object3D.position);
+            this.smoothedRotation.copy(object3D.rotation);
             this.isInitialized = true;
             return;
           }
 
-          // Estimate distance based on scale changes
-          const currentScale = object3D.scale.length();
-          const normalizedScale = Math.max(0.1, Math.min(5.0, currentScale));
-          this.currentDistance = Math.max(0.2, Math.min(3.0, 1.0 / Math.max(0.5, normalizedScale - 0.5)));
-          
-          // Track distance history for stability
-          this.distanceHistory.push(this.currentDistance);
-          if (this.distanceHistory.length > 10) {
-            this.distanceHistory.shift();
-          }
-          
-          // Calculate average distance for stability
-          const avgDistance = this.distanceHistory.reduce((a, b) => a + b, 0) / this.distanceHistory.length;
-          
-          // Determine if we should be locked based on distance
-          const shouldLock = avgDistance < this.data.lockDistance;
-          const transitionFactor = Math.max(0, Math.min(1, 
-            (avgDistance - (this.data.lockDistance - this.data.lockTransitionZone)) / this.data.lockTransitionZone
-          ));
-
-          // Track position history for consistency checking
-          this.positionHistory.push({
-            position: object3D.position.clone(),
-            rotation: object3D.rotation.clone(),
-            time: this.frameCount
-          });
-          
-          if (this.positionHistory.length > this.data.consistencyFrames) {
+          // Track recent positions
+          this.positionHistory.push(object3D.position.clone());
+          if (this.positionHistory.length > this.data.detectionFrames) {
             this.positionHistory.shift();
           }
 
-          // Check for erratic movement (sudden jumps that indicate tracking instability)
-          let isErratic = false;
-          if (this.positionHistory.length >= 2) {
-            const latest = this.positionHistory[this.positionHistory.length - 1];
-            const previous = this.positionHistory[this.positionHistory.length - 2];
-            const jumpDistance = latest.position.distanceTo(previous.position);
+          // Detect wobbling by analyzing movement variance
+          if (this.positionHistory.length >= this.data.detectionFrames) {
+            let totalMovement = 0;
+            let maxMovement = 0;
             
-            if (jumpDistance > this.data.maxJumpDistance) {
-              isErratic = true;
+            for (let i = 1; i < this.positionHistory.length; i++) {
+              const movement = this.positionHistory[i].distanceTo(this.positionHistory[i-1]);
+              totalMovement += movement;
+              maxMovement = Math.max(maxMovement, movement);
             }
+            
+            const avgMovement = totalMovement / (this.positionHistory.length - 1);
+            const movementVariance = maxMovement - avgMovement;
+            
+            // We're wobbling if there's high variance in movement OR consistently high movement
+            this.isWobbling = (movementVariance > this.data.wobbleThreshold * 0.5) || 
+                             (avgMovement > this.data.wobbleThreshold);
           }
 
-          // Determine final position based on locking logic
-          let finalPosition = new THREE.Vector3();
-          let finalRotation = new THREE.Euler();
-
-          if (shouldLock || isErratic) {
-            // Use locked position when too close or tracking is erratic
-            if (!this.isLocked) {
-              // Just entered lock mode - save current stable position
-              this.lockedPosition.copy(this.lastValidPosition);
-              this.lockedRotation.copy(this.lastValidRotation);
-              this.isLocked = true;
-              this.lockStartTime = this.frameCount;
-            }
+          // Only apply smoothing when wobbling is detected
+          if (this.isWobbling) {
+            // Smooth toward current position
+            this.smoothedPosition.lerp(object3D.position, 1 - this.data.smoothingStrength);
+            this.smoothedRotation.x += (object3D.rotation.x - this.smoothedRotation.x) * (1 - this.data.smoothingStrength);
+            this.smoothedRotation.y += (object3D.rotation.y - this.smoothedRotation.y) * (1 - this.data.smoothingStrength);
+            this.smoothedRotation.z += (object3D.rotation.z - this.smoothedRotation.z) * (1 - this.data.smoothingStrength);
             
-            // Use locked position with slight drift allowance for natural feel
-            finalPosition.copy(this.lockedPosition);
-            finalRotation.copy(this.lockedRotation);
-            
-            // Allow very small movements for natural micro-motion
-            if (!isErratic && this.positionHistory.length > 0) {
-              const current = this.positionHistory[this.positionHistory.length - 1];
-              const microMovement = new THREE.Vector3().subVectors(current.position, this.lockedPosition);
-              microMovement.multiplyScalar(0.02); // Only 2% of movement
-              finalPosition.add(microMovement);
-            }
-            
+            // Apply smoothed position
+            object3D.position.copy(this.smoothedPosition);
+            object3D.rotation.copy(this.smoothedRotation);
           } else {
-            // Normal tracking mode - use current position but with consistency checking
-            this.isLocked = false;
-            
-            if (isErratic) {
-              // Reject erratic movement, use last valid position
-              finalPosition.copy(this.lastValidPosition);
-              finalRotation.copy(this.lastValidRotation);
-            } else {
-              // Use current position and update last valid
-              finalPosition.copy(object3D.position);
-              finalRotation.copy(object3D.rotation);
-              this.lastValidPosition.copy(finalPosition);
-              this.lastValidRotation.copy(finalRotation);
-              
-              // Store stable positions for future reference
-              this.stablePositions.push({
-                position: finalPosition.clone(),
-                rotation: finalRotation.clone(),
-                distance: avgDistance,
-                time: this.frameCount
-              });
-              
-              if (this.stablePositions.length > this.data.stabilityMemory) {
-                this.stablePositions.shift();
-              }
-            }
+            // Normal tracking - update smoothed position to match current
+            this.smoothedPosition.copy(object3D.position);
+            this.smoothedRotation.copy(object3D.rotation);
           }
-
-          // Apply smooth transition when entering/exiting lock mode
-          if (transitionFactor < 1.0 && transitionFactor > 0.0) {
-            const currentPos = object3D.position.clone();
-            const currentRot = object3D.rotation.clone();
-            
-            finalPosition.lerp(currentPos, transitionFactor);
-            finalRotation.x = this.lerp(finalRotation.x, currentRot.x, transitionFactor);
-            finalRotation.y = this.lerp(finalRotation.y, currentRot.y, transitionFactor);
-            finalRotation.z = this.lerp(finalRotation.z, currentRot.z, transitionFactor);
-          }
-
-          // Apply final position
-          object3D.position.copy(finalPosition);
-          object3D.rotation.copy(finalRotation);
-        },
-
-        lerp: function(a, b, t) {
-          return a + (b - a) * t;
         },
       });
 
@@ -626,91 +534,7 @@
         },
       });
 
-      // Physics-based stabilization - AR elements have mass and resist sudden movements
-      AFRAME.registerComponent("physics-stabilization", {
-        schema: {
-          enabled: { type: "boolean", default: true },
-          mass: { type: "number", default: 1.0 }, // Higher mass = more resistance to movement
-          friction: { type: "number", default: 0.8 }, // Energy loss per frame
-          maxForce: { type: "number", default: 0.05 }, // Maximum force that can be applied
-          springConstant: { type: "number", default: 0.3 }, // Spring force toward target
-        },
-
-        init: function () {
-          this.velocity = new THREE.Vector3(0, 0, 0);
-          this.angularVelocity = new THREE.Euler(0, 0, 0);
-          this.targetPosition = new THREE.Vector3();
-          this.targetRotation = new THREE.Euler();
-          this.currentPosition = new THREE.Vector3();
-          this.currentRotation = new THREE.Euler();
-          this.isInitialized = false;
-        },
-
-        tick: function (time, timeDelta) {
-          if (!this.data.enabled) return;
-
-          const object3D = this.el.object3D;
-          const dt = Math.min(timeDelta / 1000.0, 0.033); // Cap at 30fps for stability
-
-          if (!this.isInitialized) {
-            this.currentPosition.copy(object3D.position);
-            this.currentRotation.copy(object3D.rotation);
-            this.targetPosition.copy(object3D.position);
-            this.targetRotation.copy(object3D.rotation);
-            this.isInitialized = true;
-            return;
-          }
-
-          // Update target from tracking
-          this.targetPosition.copy(object3D.position);
-          this.targetRotation.copy(object3D.rotation);
-
-          // Calculate spring force toward target
-          const force = new THREE.Vector3()
-            .subVectors(this.targetPosition, this.currentPosition)
-            .multiplyScalar(this.data.springConstant);
-
-          // Limit maximum force to prevent violent movements
-          if (force.length() > this.data.maxForce) {
-            force.normalize().multiplyScalar(this.data.maxForce);
-          }
-
-          // Apply force to velocity (F = ma, so a = F/m)
-          const acceleration = force.clone().divideScalar(this.data.mass);
-          this.velocity.add(acceleration.multiplyScalar(dt));
-
-          // Apply friction
-          this.velocity.multiplyScalar(Math.pow(this.data.friction, dt));
-
-          // Update position based on velocity
-          this.currentPosition.add(this.velocity.clone().multiplyScalar(dt));
-
-          // Simple rotation physics (could be improved)
-          const angularForce = new THREE.Euler(
-            (this.targetRotation.x - this.currentRotation.x) * this.data.springConstant,
-            (this.targetRotation.y - this.currentRotation.y) * this.data.springConstant,
-            (this.targetRotation.z - this.currentRotation.z) * this.data.springConstant
-          );
-
-          this.angularVelocity.x += angularForce.x * dt / this.data.mass;
-          this.angularVelocity.y += angularForce.y * dt / this.data.mass;
-          this.angularVelocity.z += angularForce.z * dt / this.data.mass;
-
-          // Apply angular friction
-          this.angularVelocity.x *= Math.pow(this.data.friction, dt);
-          this.angularVelocity.y *= Math.pow(this.data.friction, dt);
-          this.angularVelocity.z *= Math.pow(this.data.friction, dt);
-
-          // Update rotation
-          this.currentRotation.x += this.angularVelocity.x * dt;
-          this.currentRotation.y += this.angularVelocity.y * dt;
-          this.currentRotation.z += this.angularVelocity.z * dt;
-
-          // Apply physics-based position back to object
-          object3D.position.copy(this.currentPosition);
-          object3D.rotation.copy(this.currentRotation);
-        },
-      });
+      
 
       // ========================================
       // UTILITY FUNCTIONS
@@ -1112,17 +936,11 @@
                 console.log(`🖼️ Creating image element for ${overlay.id}`);
               }
 
-              // Add simplified depth-based parallax - let the tracking stabilizer handle stability
+              // Simple depth-based parallax with conservative settings
               const zPos = overlay.position[2];
               mediaEl.setAttribute(
                 "depth-parallax",
-                `enabled: true; baseDepth: ${zPos}; depthScale: 0.25; smoothing: 0.85; maxDistance: 2.0; adaptiveSmoothing: false`
-              );
-
-              // Add physics-based stabilization for natural movement
-              mediaEl.setAttribute(
-                "physics-stabilization",
-                `enabled: true; mass: 2.0; friction: 0.85; maxForce: 0.02; springConstant: 0.25`
+                `enabled: true; baseDepth: ${zPos}; depthScale: 0.3; smoothing: 0.85; maxDistance: 2.0; adaptiveSmoothing: true`
               );
 
               // Start invisible to prevent black frames during loading
