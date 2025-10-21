@@ -140,7 +140,7 @@
 
     <a-scene
       id="ar-scene"
-      mindar-image="imageTargetSrc: ./target.mind; autoStart: true; uiLoading: no; uiScanning: no; uiError: no; filterMinCF: 0.001; filterBeta: 0.05; warmupTolerance: 3; missTolerance: 3"
+      mindar-image="imageTargetSrc: ./target.mind; autoStart: true; uiLoading: no; uiScanning: no; uiError: no; filterMinCF: 0.01; filterBeta: 0.15; warmupTolerance: 2; missTolerance: 2"
       vr-mode-ui="enabled: false"
       device-orientation-permission-ui="enabled: false"
       renderer="alpha: true; antialias: true; colorManagement: true; physicallyCorrectLights: true; precision: highp; powerPreference: high-performance"
@@ -157,7 +157,8 @@
         id="target-root"
         mindar-image-target="targetIndex: 0"
         animation-mixer=""
-        tracking-stabilizer="enabled: true; positionThreshold: 0.002; rotationThreshold: 0.008; dampening: 0.90; maxMovementPerFrame: 0.025"
+        tracking-stabilizer="enabled: true; positionThreshold: 0.008; rotationThreshold: 0.02; dampening: 0.98; maxMovementPerFrame: 0.005; frameAveraging: 12"
+        low-pass-filter="enabled: true; cutoffFrequency: 1.5; positionOnly: false"
       >
         <!-- AR content will be added here -->
       </a-entity>
@@ -391,14 +392,15 @@
         },
       });
 
-      // Tracking stabilizer component to reduce jitter and wobbling
+      // Advanced tracking stabilizer with frame averaging and aggressive anti-wobble
       AFRAME.registerComponent("tracking-stabilizer", {
         schema: {
           enabled: { type: "boolean", default: true },
-          positionThreshold: { type: "number", default: 0.001 }, // Minimum movement to register
-          rotationThreshold: { type: "number", default: 0.005 }, // Minimum rotation to register
-          dampening: { type: "number", default: 0.92 }, // Movement dampening factor
-          maxMovementPerFrame: { type: "number", default: 0.02 }, // Maximum movement per frame
+          positionThreshold: { type: "number", default: 0.005 }, // Larger dead zone
+          rotationThreshold: { type: "number", default: 0.015 }, // Larger rotation dead zone
+          dampening: { type: "number", default: 0.96 }, // Much stronger dampening
+          maxMovementPerFrame: { type: "number", default: 0.008 }, // Much smaller max movement
+          frameAveraging: { type: "number", default: 8 }, // Number of frames to average
         },
 
         init: function () {
@@ -407,8 +409,17 @@
           this.targetPosition = new THREE.Vector3();
           this.targetRotation = new THREE.Euler();
           this.isInitialized = false;
+          
+          // Frame averaging buffers
+          this.positionHistory = [];
+          this.rotationHistory = [];
           this.velocityHistory = [];
-          this.maxHistoryLength = 5;
+          this.maxHistoryLength = this.data.frameAveraging;
+          
+          // Exponential smoothing
+          this.smoothedPosition = new THREE.Vector3();
+          this.smoothedRotation = new THREE.Euler();
+          this.alpha = 0.05; // Very slow response for ultra-stable tracking
         },
 
         tick: function () {
@@ -421,65 +432,156 @@
             this.previousRotation.copy(object3D.rotation);
             this.targetPosition.copy(object3D.position);
             this.targetRotation.copy(object3D.rotation);
+            this.smoothedPosition.copy(object3D.position);
+            this.smoothedRotation.copy(object3D.rotation);
             this.isInitialized = true;
             return;
           }
 
-          // Calculate movement delta
-          const positionDelta = new THREE.Vector3().subVectors(object3D.position, this.previousPosition);
+          // Add current position/rotation to history for averaging
+          this.positionHistory.push(object3D.position.clone());
+          this.rotationHistory.push(object3D.rotation.clone());
+          
+          if (this.positionHistory.length > this.maxHistoryLength) {
+            this.positionHistory.shift();
+            this.rotationHistory.shift();
+          }
+
+          // Calculate averaged position and rotation
+          const avgPosition = new THREE.Vector3();
+          const avgRotation = new THREE.Euler();
+          
+          this.positionHistory.forEach(pos => avgPosition.add(pos));
+          avgPosition.divideScalar(this.positionHistory.length);
+          
+          // Average rotations (simplified approach)
+          let avgX = 0, avgY = 0, avgZ = 0;
+          this.rotationHistory.forEach(rot => {
+            avgX += rot.x;
+            avgY += rot.y;
+            avgZ += rot.z;
+          });
+          avgRotation.set(
+            avgX / this.rotationHistory.length,
+            avgY / this.rotationHistory.length,
+            avgZ / this.rotationHistory.length
+          );
+
+          // Calculate movement delta from averaged values
+          const positionDelta = new THREE.Vector3().subVectors(avgPosition, this.smoothedPosition);
           const rotationDelta = new THREE.Euler(
-            object3D.rotation.x - this.previousRotation.x,
-            object3D.rotation.y - this.previousRotation.y,
-            object3D.rotation.z - this.previousRotation.z
+            avgRotation.x - this.smoothedRotation.x,
+            avgRotation.y - this.smoothedRotation.y,
+            avgRotation.z - this.smoothedRotation.z
           );
 
           // Track velocity for stability analysis
           const velocity = positionDelta.length();
           this.velocityHistory.push(velocity);
-          if (this.velocityHistory.length > this.maxHistoryLength) {
+          if (this.velocityHistory.length > 10) {
             this.velocityHistory.shift();
           }
 
-          // Calculate average velocity for stability detection
+          // Calculate velocity variance to detect shaking/wobbling
           const avgVelocity = this.velocityHistory.reduce((a, b) => a + b, 0) / this.velocityHistory.length;
-          const isUnstable = avgVelocity > 0.01; // Threshold for instability
+          const velocityVariance = this.velocityHistory.reduce((sum, v) => sum + Math.pow(v - avgVelocity, 2), 0) / this.velocityHistory.length;
+          const isWobbling = velocityVariance > 0.0001; // High variance indicates wobbling
 
-          // Apply thresholds to ignore micro-movements
-          if (positionDelta.length() < this.data.positionThreshold && !isUnstable) {
-            positionDelta.set(0, 0, 0);
+          // Apply aggressive dead zone for micro-movements
+          if (positionDelta.length() < this.data.positionThreshold || isWobbling) {
+            positionDelta.multiplyScalar(0.1); // Drastically reduce movement in wobble zone
           }
           
-          if (Math.abs(rotationDelta.x) < this.data.rotationThreshold && 
-              Math.abs(rotationDelta.y) < this.data.rotationThreshold && 
-              Math.abs(rotationDelta.z) < this.data.rotationThreshold && !isUnstable) {
-            rotationDelta.set(0, 0, 0);
+          if ((Math.abs(rotationDelta.x) < this.data.rotationThreshold && 
+               Math.abs(rotationDelta.y) < this.data.rotationThreshold && 
+               Math.abs(rotationDelta.z) < this.data.rotationThreshold) || isWobbling) {
+            rotationDelta.x *= 0.1;
+            rotationDelta.y *= 0.1;
+            rotationDelta.z *= 0.1;
           }
 
-          // Limit maximum movement per frame to prevent sudden jumps
+          // Limit maximum movement per frame aggressively
           if (positionDelta.length() > this.data.maxMovementPerFrame) {
             positionDelta.normalize().multiplyScalar(this.data.maxMovementPerFrame);
           }
 
-          // Apply dampening with extra stability for unstable tracking
-          const dampeningFactor = isUnstable ? this.data.dampening * 1.1 : this.data.dampening;
-          positionDelta.multiplyScalar(1 - dampeningFactor);
-          rotationDelta.x *= (1 - dampeningFactor);
-          rotationDelta.y *= (1 - dampeningFactor);
-          rotationDelta.z *= (1 - dampeningFactor);
+          // Apply exponential smoothing instead of linear interpolation
+          this.smoothedPosition.x += (avgPosition.x - this.smoothedPosition.x) * this.alpha;
+          this.smoothedPosition.y += (avgPosition.y - this.smoothedPosition.y) * this.alpha;
+          this.smoothedPosition.z += (avgPosition.z - this.smoothedPosition.z) * this.alpha;
+          
+          this.smoothedRotation.x += (avgRotation.x - this.smoothedRotation.x) * this.alpha;
+          this.smoothedRotation.y += (avgRotation.y - this.smoothedRotation.y) * this.alpha;
+          this.smoothedRotation.z += (avgRotation.z - this.smoothedRotation.z) * this.alpha;
 
-          // Update target positions
-          this.targetPosition.add(positionDelta);
-          this.targetRotation.x += rotationDelta.x;
-          this.targetRotation.y += rotationDelta.y;
-          this.targetRotation.z += rotationDelta.z;
+          // Apply ultra-smooth positions
+          object3D.position.copy(this.smoothedPosition);
+          object3D.rotation.copy(this.smoothedRotation);
 
-          // Apply smoothed positions
-          object3D.position.copy(this.targetPosition);
-          object3D.rotation.copy(this.targetRotation);
+          // Store for next frame
+          this.previousPosition.copy(this.smoothedPosition);
+          this.previousRotation.copy(this.smoothedRotation);
+        },
+      });
 
-          // Store current as previous for next frame
-          this.previousPosition.copy(this.targetPosition);
-          this.previousRotation.copy(this.targetRotation);
+      // Low-pass filter component for individual elements to eliminate high-frequency wobbles
+      AFRAME.registerComponent("low-pass-filter", {
+        schema: {
+          enabled: { type: "boolean", default: true },
+          cutoffFrequency: { type: "number", default: 2.0 }, // Hz - lower = smoother
+          positionOnly: { type: "boolean", default: false }, // Apply only to position
+        },
+
+        init: function () {
+          this.previousPosition = new THREE.Vector3();
+          this.previousRotation = new THREE.Euler();
+          this.filteredPosition = new THREE.Vector3();
+          this.filteredRotation = new THREE.Euler();
+          this.isInitialized = false;
+          this.lastTime = 0;
+          
+          // Calculate filter coefficient based on cutoff frequency
+          // RC = 1 / (2 * π * cutoff_frequency)
+          // α = dt / (RC + dt)
+          this.rc = 1.0 / (2.0 * Math.PI * this.data.cutoffFrequency);
+        },
+
+        tick: function (time) {
+          if (!this.data.enabled) return;
+
+          const object3D = this.el.object3D;
+          const deltaTime = this.lastTime > 0 ? (time - this.lastTime) / 1000.0 : 0.016; // Default to 60fps
+          this.lastTime = time;
+
+          if (!this.isInitialized) {
+            this.filteredPosition.copy(object3D.position);
+            this.filteredRotation.copy(object3D.rotation);
+            this.previousPosition.copy(object3D.position);
+            this.previousRotation.copy(object3D.rotation);
+            this.isInitialized = true;
+            return;
+          }
+
+          // Calculate filter coefficient for this frame
+          const alpha = deltaTime / (this.rc + deltaTime);
+
+          // Apply low-pass filter to position
+          this.filteredPosition.x += alpha * (object3D.position.x - this.filteredPosition.x);
+          this.filteredPosition.y += alpha * (object3D.position.y - this.filteredPosition.y);
+          this.filteredPosition.z += alpha * (object3D.position.z - this.filteredPosition.z);
+
+          // Apply low-pass filter to rotation (if not position-only)
+          if (!this.data.positionOnly) {
+            this.filteredRotation.x += alpha * (object3D.rotation.x - this.filteredRotation.x);
+            this.filteredRotation.y += alpha * (object3D.rotation.y - this.filteredRotation.y);
+            this.filteredRotation.z += alpha * (object3D.rotation.z - this.filteredRotation.z);
+          }
+
+          // Apply filtered values back to object
+          object3D.position.copy(this.filteredPosition);
+          if (!this.data.positionOnly) {
+            object3D.rotation.copy(this.filteredRotation);
+          }
         },
       });
 
@@ -887,7 +989,13 @@
               const zPos = overlay.position[2];
               mediaEl.setAttribute(
                 "depth-parallax",
-                `enabled: true; baseDepth: ${zPos}; depthScale: 0.25; smoothing: 0.88; maxDistance: 1.5; adaptiveSmoothing: true`
+                `enabled: true; baseDepth: ${zPos}; depthScale: 0.15; smoothing: 0.94; maxDistance: 1.2; adaptiveSmoothing: true`
+              );
+
+              // Add low-pass filter for additional wobble reduction
+              mediaEl.setAttribute(
+                "low-pass-filter",
+                `enabled: true; cutoffFrequency: 2.5; positionOnly: true`
               );
 
               // Start invisible to prevent black frames during loading
