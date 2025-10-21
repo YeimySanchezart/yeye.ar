@@ -145,15 +145,38 @@
         }
       }
       
+      /* Force visibility and override any hiding */
+      .footer {
+        display: block !important;
+        visibility: visible !important;
+        opacity: 1 !important;
+      }
+      
       /* Brave browser specific fixes */
       @media screen and (-webkit-min-device-pixel-ratio: 0) {
         .footer {
           /* Force higher z-index for Brave */
-          z-index: 9999;
+          z-index: 9999 !important;
           /* Ensure it's always visible */
           visibility: visible !important;
           opacity: 1 !important;
+          display: block !important;
         }
+        .footer a {
+          display: inline-block !important;
+          visibility: visible !important;
+          opacity: 1 !important;
+        }
+      }
+      
+      /* Debug styles - bright colors to ensure visibility */
+      .footer.debug {
+        background: red !important;
+        border: 3px solid yellow !important;
+      }
+      .footer.debug a {
+        background: lime !important;
+        color: black !important;
       }
       
       /* Hide MindAR default UI elements */
@@ -209,8 +232,8 @@
       ></a-camera>
     </a-scene>
 
-    <div class="footer hidden" id="footer">
-      <a href="" id="about-link" target="_blank">About this artwork</a>
+    <div class="footer" id="footer">
+      <a href="https://yeimysanchez.com/" id="about-link" target="_blank">About this artwork</a>
     </div>
 
     <script>
@@ -508,11 +531,11 @@
 
           // Update page title and about link
           document.title = `${manifest.title} - AR Experience`;
+          const aboutLink = document.getElementById("about-link");
           if (manifest.aboutLink) {
-            const aboutLink = document.getElementById("about-link");
             aboutLink.href = manifest.aboutLink;
-            document.getElementById("footer").classList.remove("hidden");
           }
+          // Footer is always visible now - no need to remove hidden class
 
           // Update loading text to show preloading
           const loadingEl = document.getElementById("loading");
