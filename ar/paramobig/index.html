@@ -1,0 +1,825 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, user-scalable=no, shrink-to-fit=no"
+    />
+    <!-- Prevent caching for development -->
+    <meta
+      http-equiv="Cache-Control"
+      content="no-cache, no-store, must-revalidate"
+    />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
+    <!-- Mobile app capabilities -->
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="theme-color" content="#000000" />
+    <!-- Camera permissions hint -->
+    <meta http-equiv="Permissions-Policy" content="camera=*" />
+    <title>Paramo - AR Experience</title>
+    <script src="https://cdn.jsdelivr.net/npm/aframe@1.6.0/dist/aframe-master.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
+    <style>
+      /* === GLOBAL STYLES === */
+      body {
+        margin: 0;
+        padding: 0;
+        font-family: Arial, sans-serif;
+        /* === PERFORMANCE OPTIMIZATIONS === */
+        -webkit-transform: translateZ(0);
+        transform: translateZ(0);
+        -webkit-backface-visibility: hidden;
+        backface-visibility: hidden;
+
+        /* === USER INTERACTION PREVENTION === */
+        -webkit-user-select: none;
+        -moz-user-select: none;
+        -ms-user-select: none;
+        user-select: none;
+        -webkit-touch-callout: none;
+        -webkit-tap-highlight-color: transparent;
+        /* Ensure full viewport coverage */
+        width: 100vw;
+        height: 100vh;
+        overflow: hidden;
+      }
+
+      a-scene {
+        /* Ensure scene covers full viewport */
+        width: 100% !important;
+        height: 100% !important;
+      }
+      .loading {
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        text-align: center;
+        z-index: 1000;
+        background: rgba(0, 0, 0, 0.8);
+        color: white;
+        padding: 20px;
+        border-radius: 10px;
+      }
+      .error {
+        position: fixed;
+        top: 10px;
+        left: 10px;
+        right: 10px;
+        background: #ff4444;
+        color: white;
+        padding: 10px;
+        border-radius: 5px;
+        z-index: 1000;
+      }
+      .hidden {
+        display: none;
+      }
+      .footer {
+        position: fixed;
+        bottom: 60px;
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 9999;
+        text-align: center;
+      }
+      .footer a {
+        display: inline-block;
+        color: white;
+        text-decoration: none;
+        background: rgba(0, 0, 0, 0.8);
+        padding: 10px 16px;
+        border-radius: 20px;
+        font-size: 14px;
+        font-weight: normal;
+        border: 1px solid rgba(255, 255, 255, 0.4);
+        transition: background-color 0.3s ease;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+      }
+      .footer a:hover {
+        background: rgba(0, 0, 0, 0.95);
+        border-color: rgba(255, 255, 255, 0.6);
+      }
+
+      /* Mobile adjustments */
+      @media (max-width: 768px) {
+        .footer {
+          bottom: 80px;
+        }
+        .footer a {
+          padding: 12px 18px;
+          font-size: 15px;
+        }
+      }
+
+      /* Hide MindAR default UI elements */
+      .mindar-ui-loading,
+      .mindar-ui-scanning,
+      .mindar-ui-error {
+        display: none !important;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="loading" class="loading">
+      <h2>Loading Paramo...</h2>
+      <p>Point your camera at the target image</p>
+    </div>
+
+    <div id="error" class="error hidden"></div>
+
+    <!-- Background water audio for iOS compatibility -->
+    <audio id="water-audio" preload="none" muted>
+      <source src="assets/water.mp3" type="audio/mpeg" />
+      <source src="assets/water.ogg" type="audio/ogg" />
+    </audio>
+
+    <a-scene
+      id="ar-scene"
+      mindar-image="imageTargetSrc: ./target.mind; autoStart: true; uiLoading: no; uiScanning: no; uiError: no; filterMinCF: 0.0001; filterBeta: 0.01; warmupTolerance: 5; missTolerance: 5"
+      vr-mode-ui="enabled: false"
+      device-orientation-permission-ui="enabled: false"
+      renderer="alpha: true; antialias: true; colorManagement: true; physicallyCorrectLights: true; precision: highp; powerPreference: high-performance"
+      style="position: fixed; top: 0; left: 0; width: 100%; height: 100%"
+      embedded
+    >
+      <a-assets id="assets">
+        <!-- Assets will be loaded dynamically -->
+      </a-assets>
+
+      <a-light type="ambient" color="#ffffff" intensity="0.6"></a-light>
+
+      <a-entity
+        id="target-root"
+        mindar-image-target="targetIndex: 0"
+        animation-mixer=""
+      >
+        <!-- AR content will be added here -->
+      </a-entity>
+
+      <a-camera
+        position="0 0 0"
+        look-controls="enabled: false"
+        cursor="rayOrigin: mouse"
+        wasd-controls="enabled: false"
+      ></a-camera>
+    </a-scene>
+
+    <div class="footer" id="footer">
+      <a href="https://yeimysanchez.com/" id="about-link" target="_blank"
+        >About this artwork</a
+      >
+    </div>
+
+    <script>
+      // ========================================
+      // A-FRAME COMPONENTS
+      // ========================================
+
+      // Chroma key component with optional background masking
+      AFRAME.registerComponent("chroma-key", {
+        schema: {
+          color: { type: "color", default: "#000000" },
+          threshold: { type: "number", default: 0.15 },
+          smoothing: { type: "number", default: 0.1 },
+          backgroundMask: { type: "boolean", default: false },
+          bgScaleX: { type: "number", default: 1.1625 }, // Background image X scale
+          bgScaleY: { type: "number", default: 1.5 }, // Background image Y scale
+        },
+
+        init: function () {
+          const el = this.el;
+
+          // Wait for the video to load
+          el.addEventListener("materialtextureloaded", () => {
+            const mesh = el.getObject3D("mesh");
+            if (mesh && mesh.material) {
+              const material = mesh.material;
+
+              // Create custom shader material for chroma key with optional background masking
+              const vertexShader = `
+                varying vec2 vUv;
+                void main() {
+                  vUv = uv;
+                  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                }
+              `;
+
+              const fragmentShader = `
+                uniform sampler2D map;
+                uniform vec3 chromaColor;
+                uniform float threshold;
+                uniform float smoothing;
+                uniform float opacity;
+                uniform bool backgroundMask;
+                uniform float bgScaleX;
+                uniform float bgScaleY;
+                varying vec2 vUv;
+
+                void main() {
+                  vec4 textureColor = texture2D(map, vUv);
+
+                  // Chroma key transparency - hard cutoff for complete transparency
+                  float distance = length(textureColor.rgb - chromaColor);
+                  float chromaAlpha = distance > threshold ? 1.0 : 0.0;
+
+                  // Optional background masking - only appear over background bounds
+                  float bgAlpha = 1.0;
+                  if (backgroundMask) {
+                    // Convert UV to normalized device coordinates centered at 0,0
+                    vec2 ndc = (vUv - 0.5) * 2.0;
+
+                    // Check if within background image bounds
+                    float bgHalfWidth = bgScaleX / 2.0;
+                    float bgHalfHeight = bgScaleY / 2.0;
+
+                    // Fade out smoothly at background edges
+                    float fadeZone = 0.1;
+                    float distFromEdgeX = bgHalfWidth - abs(ndc.x);
+                    float distFromEdgeY = bgHalfHeight - abs(ndc.y);
+
+                    float alphaX = smoothstep(-fadeZone, fadeZone, distFromEdgeX);
+                    float alphaY = smoothstep(-fadeZone, fadeZone, distFromEdgeY);
+
+                    bgAlpha = alphaX * alphaY;
+                  }
+
+                  float finalAlpha = chromaAlpha * bgAlpha;
+                  gl_FragColor = vec4(textureColor.rgb, textureColor.a * finalAlpha * opacity);
+                }
+              `;
+
+              const combinedMaterial = new THREE.ShaderMaterial({
+                vertexShader: vertexShader,
+                fragmentShader: fragmentShader,
+                uniforms: {
+                  map: { value: material.map },
+                  chromaColor: { value: new THREE.Color(this.data.color) },
+                  threshold: { value: this.data.threshold },
+                  smoothing: { value: this.data.smoothing },
+                  opacity: { value: material.opacity || 1.0 },
+                  backgroundMask: { value: this.data.backgroundMask },
+                  bgScaleX: { value: this.data.bgScaleX },
+                  bgScaleY: { value: this.data.bgScaleY },
+                },
+                transparent: true,
+                side: THREE.DoubleSide,
+              });
+
+              mesh.material = combinedMaterial;
+            }
+          });
+        },
+      });
+
+      // Depth-based parallax component for natural movement
+      AFRAME.registerComponent("depth-parallax", {
+        schema: {
+          enabled: { type: "boolean", default: true },
+          baseDepth: { type: "number", default: 0 }, // Reference depth (0 = no parallax)
+          depthScale: { type: "number", default: 0.3 }, // How much depth affects movement
+          smoothing: { type: "number", default: 0.85 }, // Movement smoothing
+        },
+
+        init: function () {
+          this.targetEntity = this.el.sceneEl.querySelector(
+            "[mindar-image-target]"
+          );
+          this.previousPosition = new THREE.Vector3();
+          this.previousRotation = new THREE.Euler();
+          this.basePosition = new THREE.Vector3();
+          this.baseRotation = new THREE.Euler();
+          this.isInitialized = false;
+        },
+
+        tick: function () {
+          if (!this.data.enabled || !this.targetEntity) return;
+
+          const targetObject3D = this.targetEntity.object3D;
+          const myObject3D = this.el.object3D;
+
+          // Initialize base position on first frame
+          if (!this.isInitialized) {
+            this.basePosition.copy(myObject3D.position);
+            this.baseRotation.copy(myObject3D.rotation);
+            this.previousPosition.copy(myObject3D.position);
+            this.previousRotation.copy(myObject3D.rotation);
+            this.isInitialized = true;
+            return;
+          }
+
+          // Calculate parallax factor based on Z-depth
+          const depth = this.basePosition.z;
+          const parallaxFactor = 1.0 - depth * this.data.depthScale;
+
+          // Get target movement (relative to base position)
+          const targetPos = new THREE.Vector3();
+          targetPos.copy(this.basePosition);
+
+          // Apply parallax scaling to target movement
+          const targetMovement = new THREE.Vector3();
+          targetMovement.copy(targetObject3D.position);
+          targetMovement.multiplyScalar(parallaxFactor);
+          targetPos.add(targetMovement);
+
+          // Apply parallax scaling to rotation
+          const targetRot = new THREE.Euler();
+          targetRot.copy(this.baseRotation);
+          targetRot.x += targetObject3D.rotation.x * parallaxFactor;
+          targetRot.y += targetObject3D.rotation.y * parallaxFactor;
+          targetRot.z += targetObject3D.rotation.z * parallaxFactor;
+
+          // Smooth interpolation to target
+          this.previousPosition.lerp(targetPos, 1 - this.data.smoothing);
+          this.previousRotation.x +=
+            (targetRot.x - this.previousRotation.x) * (1 - this.data.smoothing);
+          this.previousRotation.y +=
+            (targetRot.y - this.previousRotation.y) * (1 - this.data.smoothing);
+          this.previousRotation.z +=
+            (targetRot.z - this.previousRotation.z) * (1 - this.data.smoothing);
+
+          // Apply smoothed values
+          myObject3D.position.copy(this.previousPosition);
+          myObject3D.rotation.copy(this.previousRotation);
+        },
+      });
+
+      // ========================================
+      // UTILITY FUNCTIONS
+      // ========================================
+
+      function isIOSDevice() {
+        return /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+      }
+
+      // Log device info for debugging
+      console.log(
+        `🔍 Device info: iOS=${isIOSDevice()}, UserAgent=${navigator.userAgent}`
+      );
+
+      // Asset preloading function with iOS compatibility
+      function preloadAsset(url, type) {
+        return new Promise((resolve, reject) => {
+          const cacheBuster = Date.now();
+          const fullUrl = `${url}?v=${cacheBuster}`;
+          const isIOS = isIOSDevice();
+
+          // Set timeout to avoid hanging on iOS
+          const timeout = setTimeout(
+            () => {
+              console.warn(`⏰ Preload timeout for ${type}: ${url}`);
+              resolve(null); // Resolve with null instead of rejecting
+            },
+            isIOS ? 5000 : 10000
+          ); // Shorter timeout on iOS
+
+          if (type === "video") {
+            const video = document.createElement("video");
+            video.preload = isIOS ? "metadata" : "auto"; // Less aggressive preload on iOS
+            video.muted = true;
+            video.crossOrigin = "anonymous";
+            video.playsInline = true; // Essential for iOS
+
+            const onLoaded = () => {
+              clearTimeout(timeout);
+              console.log(`✅ Preloaded video: ${url}`);
+              resolve(video);
+            };
+
+            const onError = (e) => {
+              clearTimeout(timeout);
+              console.warn(`⚠️ Video preload failed (continuing): ${url}`, e);
+              resolve(null); // Continue instead of failing
+            };
+
+            // Use single event listener for iOS compatibility
+            if (isIOS) {
+              video.addEventListener("loadedmetadata", onLoaded);
+            } else {
+              video.addEventListener("loadeddata", onLoaded);
+            }
+            video.addEventListener("error", onError);
+
+            video.src = fullUrl;
+          } else if (type === "audio") {
+            const audio = document.createElement("audio");
+            audio.preload = isIOS ? "metadata" : "auto";
+            audio.crossOrigin = "anonymous";
+
+            const onLoaded = () => {
+              clearTimeout(timeout);
+              console.log(`✅ Preloaded audio: ${url}`);
+              resolve(audio);
+            };
+
+            const onError = (e) => {
+              clearTimeout(timeout);
+              console.warn(`⚠️ Audio preload failed (continuing): ${url}`, e);
+              resolve(null);
+            };
+
+            audio.addEventListener("loadedmetadata", onLoaded);
+            audio.addEventListener("error", onError);
+
+            audio.src = fullUrl;
+          } else {
+            // Image preloading
+            const img = new Image();
+            img.crossOrigin = "anonymous";
+
+            img.onload = () => {
+              clearTimeout(timeout);
+              console.log(`✅ Preloaded image: ${url}`);
+              resolve(img);
+            };
+
+            img.onerror = (e) => {
+              clearTimeout(timeout);
+              console.warn(`⚠️ Image preload failed (continuing): ${url}`, e);
+              resolve(null);
+            };
+
+            img.src = fullUrl;
+          }
+        });
+      }
+
+      // ========================================
+      // MAIN APPLICATION FUNCTIONS
+      // ========================================
+
+      // Main AR experience loader
+      async function loadARExperience() {
+        try {
+          console.log("🚀 Starting AR experience...");
+
+          // Create cache-busting timestamp
+          const cacheBuster = Date.now();
+
+          // Load manifest with cache busting
+          const response = await fetch(`./manifest.json?v=${cacheBuster}`);
+          if (!response.ok) {
+            throw new Error(`Failed to load manifest: ${response.status}`);
+          }
+          const manifest = await response.json();
+          console.log("📄 Loaded manifest:", manifest.title);
+
+          // Update page title and about link
+          document.title = `${manifest.title} - AR Experience`;
+          const aboutLink = document.getElementById("about-link");
+          if (manifest.aboutLink) {
+            aboutLink.href = manifest.aboutLink;
+          }
+          // Footer is always visible now - no need to remove hidden class
+
+          // Update loading text to show preloading
+          const loadingEl = document.getElementById("loading");
+          loadingEl.innerHTML =
+            "<h3>Loading AR Experience...</h3><p>Preloading assets...</p>";
+
+          // Preload all assets with iOS-friendly approach
+          console.log("📦 Preloading all assets...");
+          const isIOS = isIOSDevice();
+
+          const preloadPromises = manifest.overlays
+            .map(async (overlay) => {
+              if (overlay.url.mp4 || overlay.url.webm) {
+                let baseVideoUrl = overlay.url.mp4 || overlay.url.webm;
+                console.log(`🎥 Preloading video: ${baseVideoUrl}`);
+                return preloadAsset(baseVideoUrl, "video");
+              } else {
+                const imageUrl =
+                  overlay.url.png ||
+                  overlay.url.jpg ||
+                  overlay.url.gif ||
+                  overlay.url.webp;
+                if (imageUrl) {
+                  console.log(`🖼️ Preloading image: ${imageUrl}`);
+                  return preloadAsset(imageUrl, "image");
+                }
+              }
+            })
+            .filter(Boolean);
+
+          // Wait for all assets with global timeout for iOS
+          try {
+            if (isIOS) {
+              // Shorter timeout for iOS to prevent hanging
+              await Promise.race([
+                Promise.all(preloadPromises),
+                new Promise((resolve) =>
+                  setTimeout(() => {
+                    console.log(
+                      "📱 iOS: Continuing with partial asset loading..."
+                    );
+                    resolve();
+                  }, 8000)
+                ),
+              ]);
+            } else {
+              await Promise.all(preloadPromises);
+            }
+            console.log("✅ Asset preloading completed!");
+          } catch (error) {
+            console.warn(
+              "⚠️ Some assets failed to preload, continuing...",
+              error
+            );
+          }
+
+          // Update loading text
+          loadingEl.innerHTML =
+            "<h3>Loading AR Experience...</h3><p>Creating AR scene...</p>";
+
+          // Get references
+          const assetsEl = document.getElementById("assets");
+          const targetRoot = document.getElementById("target-root");
+          const errorEl = document.getElementById("error");
+
+          // Create assets and overlays
+          manifest.overlays.forEach((overlay, index) => {
+            try {
+              // Create asset
+              let assetEl;
+              const assetId = `asset-${overlay.id}`;
+
+              if (overlay.url.mp4 || overlay.url.webm) {
+                // Simple video asset creation - no fallbacks for debugging
+                let finalUrl = overlay.url.mp4 || overlay.url.webm;
+
+                console.log(
+                  `🎥 Creating video asset for ${overlay.id}: ${finalUrl}`
+                );
+
+                // Create video element
+                assetEl = document.createElement("video");
+                assetEl.src = `${finalUrl}?v=${cacheBuster}`;
+                assetEl.setAttribute("autoplay", "false"); // Don't autoplay, we'll control this
+                assetEl.setAttribute("loop", "true");
+                assetEl.setAttribute("muted", "true");
+                assetEl.setAttribute("playsinline", "true");
+                assetEl.setAttribute("crossorigin", "anonymous");
+                assetEl.setAttribute("preload", "auto"); // Preload full video for better sync
+
+                // Simplified video event listeners
+                assetEl.addEventListener("loadeddata", () => {
+                  console.log(`✅ Video loaded: ${overlay.id}`);
+                });
+                assetEl.addEventListener("canplay", () => {
+                  console.log(`🎬 Video ready: ${overlay.id}`);
+                  assetEl.play().catch((error) => {
+                    console.warn(`⚠️ Autoplay prevented: ${overlay.id}`, error);
+                  });
+                });
+                assetEl.addEventListener("error", (e) => {
+                  console.error(`❌ Video error: ${overlay.id}`, e);
+                });
+              } else {
+                // Image asset creation
+                console.log(`🖼️ Creating image asset for ${overlay.id}`);
+                assetEl = document.createElement("img");
+                const imageUrl =
+                  overlay.url.png ||
+                  overlay.url.jpg ||
+                  overlay.url.gif ||
+                  overlay.url.webp;
+
+                if (!imageUrl) {
+                  console.warn(
+                    `⚠️ No supported image format for: ${overlay.id}`
+                  );
+                  return;
+                }
+
+                assetEl.src = `${imageUrl}?v=${cacheBuster}`;
+                assetEl.setAttribute("crossorigin", "anonymous");
+
+                // Image event listeners
+                assetEl.addEventListener("load", () => {
+                  console.log(`✅ Image loaded: ${overlay.id}`);
+                });
+                assetEl.addEventListener("error", (e) => {
+                  console.error(`❌ Image error: ${overlay.id}`, e);
+                });
+              }
+
+              assetEl.id = assetId;
+              assetsEl.appendChild(assetEl);
+
+              // Simple AR element creation - no complex fallbacks for debugging
+              const mediaEl = document.createElement(
+                overlay.url.mp4 || overlay.url.webm ? "a-video" : "a-image"
+              );
+              mediaEl.setAttribute("id", overlay.id);
+              mediaEl.setAttribute("src", `#${assetId}`);
+              mediaEl.setAttribute("position", overlay.position.join(" "));
+              mediaEl.setAttribute("scale", overlay.scale.join(" "));
+              mediaEl.setAttribute("geometry", "primitive: plane");
+
+              if (overlay.url.mp4 || overlay.url.webm) {
+                // Video configuration map for chroma key settings
+                const videoConfig = {
+                  "bush-video": {
+                    chromaType: "magenta",
+                    color: "#FF00FF", // Pure magenta
+                    threshold: 0.7, // Higher threshold to remove more magenta
+                    smoothing: 0, // Sharp edges
+                    maskToBg: false, // Bush appears in foreground
+                  },
+                  "title-video": {
+                    chromaType: "magenta",
+                    color: "#FF00FF", // Pure magenta
+                    threshold: 0.7, // Higher threshold to remove more magenta
+                    smoothing: 0, // Sharp edges
+                    maskToBg: false, // Title appears over everything
+                  },
+                  "clouds-video": {
+                    chromaType: "magenta",
+                    color: "#FF00FF", // Pure magenta
+                    threshold: 0.7, // Higher threshold to remove more magenta
+                    smoothing: 0, // Sharp edges
+                    depthMask: false, // Remove depth masking - use background masking instead
+                    backgroundMask: true, // Only appear over background image
+                  },
+                };
+
+                const config = videoConfig[overlay.id];
+
+                if (config) {
+                  // Video with chroma key transparency
+                  console.log(
+                    `🎬 Creating ${config.chromaType} chroma key video element for ${overlay.id} with threshold: ${config.threshold}`
+                  );
+                  mediaEl.setAttribute(
+                    "material",
+                    `transparent: true; opacity: ${
+                      overlay.opacity || 1.0
+                    }; alphaTest: 0.1; shader: flat`
+                  );
+
+                  // Apply chroma key with optional background masking
+                  const chromaKeyAttrs = `color: ${config.color}; threshold: ${config.threshold}; smoothing: ${config.smoothing}`;
+                  if (config.backgroundMask) {
+                    console.log(
+                      `🎭 Applying background mask to ${overlay.id} - only appear over background image`
+                    );
+                    mediaEl.setAttribute(
+                      "chroma-key",
+                      `${chromaKeyAttrs}; backgroundMask: true; bgScaleX: 1.1625; bgScaleY: 1.5`
+                    );
+                  } else {
+                    mediaEl.setAttribute("chroma-key", chromaKeyAttrs);
+                  }
+                } else {
+                  // Video element with basic transparency (for non-chroma backgrounds)
+                  console.log(
+                    `🎥 Creating standard video element for ${overlay.id}`
+                  );
+                  mediaEl.setAttribute(
+                    "material",
+                    `transparent: true; opacity: ${
+                      overlay.opacity || 1.0
+                    }; alphaTest: 0.1; shader: flat`
+                  );
+                }
+                mediaEl.setAttribute("autoplay", "true");
+                mediaEl.setAttribute("loop", "true");
+              } else {
+                // Image element
+                mediaEl.setAttribute(
+                  "material",
+                  `transparent: true; opacity: ${overlay.opacity || 1.0}`
+                );
+                console.log(`🖼️ Creating image element for ${overlay.id}`);
+              }
+
+              // Add depth-based parallax component for natural movement
+              const zPos = overlay.position[2];
+              mediaEl.setAttribute(
+                "depth-parallax",
+                `enabled: true; baseDepth: ${zPos}; depthScale: 0.4; smoothing: 0.85`
+              );
+
+              // Start invisible to prevent black frames during loading
+              mediaEl.setAttribute("visible", "false");
+
+              targetRoot.appendChild(mediaEl);
+              console.log(
+                `✅ Added overlay: ${overlay.id} with depth parallax`
+              );
+            } catch (error) {
+              console.error(
+                `❌ Failed to create overlay ${overlay.id}:`,
+                error
+              );
+            }
+          });
+
+          // Wait for all videos to be ready before showing the scene
+          const waitForAllVideosReady = async () => {
+            const videos = document.querySelectorAll("video");
+            const videoPromises = Array.from(videos).map((video) => {
+              return new Promise((resolve) => {
+                if (video.readyState >= 3) {
+                  // HAVE_FUTURE_DATA
+                  resolve();
+                } else {
+                  const onReady = () => {
+                    video.removeEventListener("canplay", onReady);
+                    video.removeEventListener("loadeddata", onReady);
+                    resolve();
+                  };
+                  video.addEventListener("canplay", onReady);
+                  video.addEventListener("loadeddata", onReady);
+
+                  // Fallback timeout
+                  setTimeout(resolve, 3000);
+                }
+              });
+            });
+
+            try {
+              await Promise.all(videoPromises);
+              console.log("🎬 All videos ready!");
+            } catch (error) {
+              console.warn("⚠️ Some videos not ready, continuing...", error);
+            }
+
+            // Get all AR elements for final reveal
+            const arElements = targetRoot.querySelectorAll("a-video, a-image");
+
+            // Start all videos simultaneously
+            const startPromises = Array.from(videos).map((video) => {
+              return video.play().catch((error) => {
+                console.warn("⚠️ Could not start video:", video.id, error);
+              });
+            });
+
+            await Promise.all(startPromises);
+
+            // Small delay for synchronization, then show everything at once
+            setTimeout(() => {
+              arElements.forEach((el) => {
+                el.setAttribute("visible", "true");
+              });
+              loadingEl.classList.add("hidden");
+              console.log("✅ AR experience ready and synchronized!");
+            }, 200);
+          };
+
+          // Initialize the synchronized experience
+          waitForAllVideosReady();
+        } catch (error) {
+          console.error("❌ Failed to load AR experience:", error);
+          document.getElementById("loading").classList.add("hidden");
+          const errorEl = document.getElementById("error");
+          errorEl.textContent = `Error: ${error.message}`;
+          errorEl.classList.remove("hidden");
+        }
+      }
+
+      // Auto-start AR when page loads
+      document.addEventListener("DOMContentLoaded", () => {
+        console.log("📱 DOM loaded, initializing AR...");
+
+        // Add cache busting to target.mind file
+        const scene = document.querySelector("a-scene");
+        const cacheBuster = Date.now();
+        const currentSrc = scene.getAttribute("mindar-image");
+        const updatedSrc = currentSrc.replace(
+          "./target.mind",
+          `./target.mind?v=${cacheBuster}`
+        );
+        scene.setAttribute("mindar-image", updatedSrc);
+        console.log("🎯 Target updated with cache buster");
+
+        // Show loading immediately since autoStart is true
+        document.getElementById("loading").classList.remove("hidden");
+
+        // Wait for scene to load, then load AR content
+        scene.addEventListener(
+          "loaded",
+          async () => {
+            console.log("🎬 Scene loaded, loading AR content...");
+
+            // Small delay to ensure MindAR is initialized
+            setTimeout(async () => {
+              try {
+                await loadARExperience();
+              } catch (error) {
+                console.error("❌ Failed to load AR:", error);
+                document.getElementById("loading").classList.add("hidden");
+                const errorEl = document.getElementById("error");
+                errorEl.textContent = `Error: ${error.message}`;
+                errorEl.classList.remove("hidden");
+              }
+            }, 2000);
+          },
+          { once: true }
+        );
+      });
+    </script>
+  </body>
+</html>
