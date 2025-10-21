@@ -140,7 +140,7 @@
 
     <a-scene
       id="ar-scene"
-      mindar-image="imageTargetSrc: ./target.mind; autoStart: true; uiLoading: no; uiScanning: no; uiError: no; filterMinCF: 0.0001; filterBeta: 0.01; warmupTolerance: 5; missTolerance: 5"
+      mindar-image="imageTargetSrc: ./target.mind; autoStart: true; uiLoading: no; uiScanning: no; uiError: no; filterMinCF: 0.001; filterBeta: 0.05; warmupTolerance: 3; missTolerance: 3"
       vr-mode-ui="enabled: false"
       device-orientation-permission-ui="enabled: false"
       renderer="alpha: true; antialias: true; colorManagement: true; physicallyCorrectLights: true; precision: highp; powerPreference: high-performance"
@@ -157,6 +157,7 @@
         id="target-root"
         mindar-image-target="targetIndex: 0"
         animation-mixer=""
+        tracking-stabilizer="enabled: true; positionThreshold: 0.002; rotationThreshold: 0.008; dampening: 0.90; maxMovementPerFrame: 0.025"
       >
         <!-- AR content will be added here -->
       </a-entity>
@@ -276,13 +277,15 @@
         },
       });
 
-      // Depth-based parallax component for natural movement
+      // Depth-based parallax component for natural movement with stability improvements
       AFRAME.registerComponent("depth-parallax", {
         schema: {
           enabled: { type: "boolean", default: true },
           baseDepth: { type: "number", default: 0 }, // Reference depth (0 = no parallax)
           depthScale: { type: "number", default: 0.3 }, // How much depth affects movement
           smoothing: { type: "number", default: 0.85 }, // Movement smoothing
+          maxDistance: { type: "number", default: 2.0 }, // Maximum effective distance
+          adaptiveSmoothing: { type: "boolean", default: true }, // Enable distance-based smoothing
         },
 
         init: function () {
@@ -294,6 +297,8 @@
           this.basePosition = new THREE.Vector3();
           this.baseRotation = new THREE.Euler();
           this.isInitialized = false;
+          this.trackingQuality = 1.0;
+          this.frameCount = 0;
         },
 
         tick: function () {
@@ -301,6 +306,7 @@
 
           const targetObject3D = this.targetEntity.object3D;
           const myObject3D = this.el.object3D;
+          this.frameCount++;
 
           // Initialize base position on first frame
           if (!this.isInitialized) {
@@ -312,39 +318,168 @@
             return;
           }
 
-          // Calculate parallax factor based on Z-depth
+          // Estimate distance to target based on scale changes
+          const currentScale = targetObject3D.scale.length();
+          const estimatedDistance = Math.min(this.data.maxDistance, Math.max(0.1, 1.0 / Math.max(0.1, currentScale - 1.0)));
+          
+          // Calculate adaptive smoothing based on distance and tracking quality
+          let adaptiveSmoothing = this.data.smoothing;
+          if (this.data.adaptiveSmoothing) {
+            // Increase smoothing when very close (< 0.5 units) or tracking quality is poor
+            const distanceFactor = Math.max(0.0, Math.min(1.0, (estimatedDistance - 0.2) / 0.8));
+            const qualityFactor = Math.max(0.3, this.trackingQuality);
+            adaptiveSmoothing = Math.min(0.95, this.data.smoothing + (1 - distanceFactor) * 0.1 + (1 - qualityFactor) * 0.05);
+          }
+
+          // Calculate parallax factor based on Z-depth with distance dampening
           const depth = this.basePosition.z;
-          const parallaxFactor = 1.0 - depth * this.data.depthScale;
+          const baseParallaxFactor = 1.0 - depth * this.data.depthScale;
+          
+          // Reduce parallax effect when very close to prevent wobbling
+          const distanceDampening = Math.max(0.2, Math.min(1.0, estimatedDistance / 0.8));
+          const parallaxFactor = baseParallaxFactor * distanceDampening;
 
           // Get target movement (relative to base position)
           const targetPos = new THREE.Vector3();
           targetPos.copy(this.basePosition);
 
-          // Apply parallax scaling to target movement
+          // Apply parallax scaling to target movement with stability constraints
           const targetMovement = new THREE.Vector3();
           targetMovement.copy(targetObject3D.position);
+          
+          // Clamp movement to prevent extreme positions
+          targetMovement.x = Math.max(-0.5, Math.min(0.5, targetMovement.x));
+          targetMovement.y = Math.max(-0.5, Math.min(0.5, targetMovement.y));
+          
           targetMovement.multiplyScalar(parallaxFactor);
           targetPos.add(targetMovement);
 
-          // Apply parallax scaling to rotation
+          // Apply parallax scaling to rotation with dampening
           const targetRot = new THREE.Euler();
           targetRot.copy(this.baseRotation);
-          targetRot.x += targetObject3D.rotation.x * parallaxFactor;
-          targetRot.y += targetObject3D.rotation.y * parallaxFactor;
-          targetRot.z += targetObject3D.rotation.z * parallaxFactor;
+          const rotationDampening = Math.max(0.1, distanceDampening);
+          targetRot.x += targetObject3D.rotation.x * parallaxFactor * rotationDampening;
+          targetRot.y += targetObject3D.rotation.y * parallaxFactor * rotationDampening;
+          targetRot.z += targetObject3D.rotation.z * parallaxFactor * rotationDampening;
 
-          // Smooth interpolation to target
-          this.previousPosition.lerp(targetPos, 1 - this.data.smoothing);
-          this.previousRotation.x +=
-            (targetRot.x - this.previousRotation.x) * (1 - this.data.smoothing);
-          this.previousRotation.y +=
-            (targetRot.y - this.previousRotation.y) * (1 - this.data.smoothing);
-          this.previousRotation.z +=
-            (targetRot.z - this.previousRotation.z) * (1 - this.data.smoothing);
+          // Smooth interpolation to target with adaptive smoothing
+          const lerpFactor = 1 - adaptiveSmoothing;
+          this.previousPosition.lerp(targetPos, lerpFactor);
+          this.previousRotation.x += (targetRot.x - this.previousRotation.x) * lerpFactor;
+          this.previousRotation.y += (targetRot.y - this.previousRotation.y) * lerpFactor;
+          this.previousRotation.z += (targetRot.z - this.previousRotation.z) * lerpFactor;
 
           // Apply smoothed values
           myObject3D.position.copy(this.previousPosition);
           myObject3D.rotation.copy(this.previousRotation);
+
+          // Update tracking quality estimation every 30 frames
+          if (this.frameCount % 30 === 0) {
+            this.updateTrackingQuality(targetObject3D);
+          }
+        },
+
+        updateTrackingQuality: function(targetObject3D) {
+          // Simple tracking quality estimation based on movement stability
+          const currentPos = targetObject3D.position;
+          if (this.lastTrackedPosition) {
+            const movement = currentPos.distanceTo(this.lastTrackedPosition);
+            // Lower movement = better tracking quality
+            this.trackingQuality = Math.max(0.1, Math.min(1.0, 1.0 - movement * 10));
+          }
+          this.lastTrackedPosition = currentPos.clone();
+        },
+      });
+
+      // Tracking stabilizer component to reduce jitter and wobbling
+      AFRAME.registerComponent("tracking-stabilizer", {
+        schema: {
+          enabled: { type: "boolean", default: true },
+          positionThreshold: { type: "number", default: 0.001 }, // Minimum movement to register
+          rotationThreshold: { type: "number", default: 0.005 }, // Minimum rotation to register
+          dampening: { type: "number", default: 0.92 }, // Movement dampening factor
+          maxMovementPerFrame: { type: "number", default: 0.02 }, // Maximum movement per frame
+        },
+
+        init: function () {
+          this.previousPosition = new THREE.Vector3();
+          this.previousRotation = new THREE.Euler();
+          this.targetPosition = new THREE.Vector3();
+          this.targetRotation = new THREE.Euler();
+          this.isInitialized = false;
+          this.velocityHistory = [];
+          this.maxHistoryLength = 5;
+        },
+
+        tick: function () {
+          if (!this.data.enabled) return;
+
+          const object3D = this.el.object3D;
+
+          if (!this.isInitialized) {
+            this.previousPosition.copy(object3D.position);
+            this.previousRotation.copy(object3D.rotation);
+            this.targetPosition.copy(object3D.position);
+            this.targetRotation.copy(object3D.rotation);
+            this.isInitialized = true;
+            return;
+          }
+
+          // Calculate movement delta
+          const positionDelta = new THREE.Vector3().subVectors(object3D.position, this.previousPosition);
+          const rotationDelta = new THREE.Euler(
+            object3D.rotation.x - this.previousRotation.x,
+            object3D.rotation.y - this.previousRotation.y,
+            object3D.rotation.z - this.previousRotation.z
+          );
+
+          // Track velocity for stability analysis
+          const velocity = positionDelta.length();
+          this.velocityHistory.push(velocity);
+          if (this.velocityHistory.length > this.maxHistoryLength) {
+            this.velocityHistory.shift();
+          }
+
+          // Calculate average velocity for stability detection
+          const avgVelocity = this.velocityHistory.reduce((a, b) => a + b, 0) / this.velocityHistory.length;
+          const isUnstable = avgVelocity > 0.01; // Threshold for instability
+
+          // Apply thresholds to ignore micro-movements
+          if (positionDelta.length() < this.data.positionThreshold && !isUnstable) {
+            positionDelta.set(0, 0, 0);
+          }
+          
+          if (Math.abs(rotationDelta.x) < this.data.rotationThreshold && 
+              Math.abs(rotationDelta.y) < this.data.rotationThreshold && 
+              Math.abs(rotationDelta.z) < this.data.rotationThreshold && !isUnstable) {
+            rotationDelta.set(0, 0, 0);
+          }
+
+          // Limit maximum movement per frame to prevent sudden jumps
+          if (positionDelta.length() > this.data.maxMovementPerFrame) {
+            positionDelta.normalize().multiplyScalar(this.data.maxMovementPerFrame);
+          }
+
+          // Apply dampening with extra stability for unstable tracking
+          const dampeningFactor = isUnstable ? this.data.dampening * 1.1 : this.data.dampening;
+          positionDelta.multiplyScalar(1 - dampeningFactor);
+          rotationDelta.x *= (1 - dampeningFactor);
+          rotationDelta.y *= (1 - dampeningFactor);
+          rotationDelta.z *= (1 - dampeningFactor);
+
+          // Update target positions
+          this.targetPosition.add(positionDelta);
+          this.targetRotation.x += rotationDelta.x;
+          this.targetRotation.y += rotationDelta.y;
+          this.targetRotation.z += rotationDelta.z;
+
+          // Apply smoothed positions
+          object3D.position.copy(this.targetPosition);
+          object3D.rotation.copy(this.targetRotation);
+
+          // Store current as previous for next frame
+          this.previousPosition.copy(this.targetPosition);
+          this.previousRotation.copy(this.targetRotation);
         },
       });
 
@@ -590,7 +725,6 @@
           // Get references
           const assetsEl = document.getElementById("assets");
           const targetRoot = document.getElementById("target-root");
-          const errorEl = document.getElementById("error");
 
           // Create assets and overlays
           manifest.overlays.forEach((overlay, index) => {
@@ -749,11 +883,11 @@
                 console.log(`🖼️ Creating image element for ${overlay.id}`);
               }
 
-              // Add depth-based parallax component for natural movement
+              // Add depth-based parallax component for natural movement with stability improvements
               const zPos = overlay.position[2];
               mediaEl.setAttribute(
                 "depth-parallax",
-                `enabled: true; baseDepth: ${zPos}; depthScale: 0.4; smoothing: 0.85`
+                `enabled: true; baseDepth: ${zPos}; depthScale: 0.25; smoothing: 0.88; maxDistance: 1.5; adaptiveSmoothing: true`
               );
 
               // Start invisible to prevent black frames during loading
