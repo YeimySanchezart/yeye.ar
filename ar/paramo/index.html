@@ -84,6 +84,7 @@
         transform: translateX(-50%);
         z-index: 9999;
         text-align: center;
+        display: none; /* Hide the footer */
       }
       .footer a {
         display: inline-block;
@@ -97,6 +98,8 @@
         border: 1px solid rgba(255, 255, 255, 0.4);
         transition: background-color 0.3s ease;
         box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+        pointer-events: none; /* Disable interaction */
+        opacity: 0.5; /* Make it visually disabled */
       }
       .footer a:hover {
         background: rgba(0, 0, 0, 0.95);
@@ -358,50 +361,7 @@
         `🔍 Device info: iOS=${isIOSDevice()}, UserAgent=${navigator.userAgent}`
       );
 
-      // Audio control function for when autoplay is blocked
-      function addAudioControlButton() {
-        // Check if button already exists
-        if (document.getElementById("audio-control-btn")) return;
-        
-        const audioBtn = document.createElement("button");
-        audioBtn.id = "audio-control-btn";
-        audioBtn.innerHTML = "🔊 Enable Audio";
-        audioBtn.style.cssText = `
-          position: fixed;
-          top: 20px;
-          right: 20px;
-          background: rgba(0, 0, 0, 0.8);
-          color: white;
-          border: 1px solid rgba(255, 255, 255, 0.4);
-          padding: 8px 12px;
-          border-radius: 15px;
-          font-size: 12px;
-          cursor: pointer;
-          z-index: 1000;
-          transition: background-color 0.3s ease;
-        `;
-        
-        audioBtn.addEventListener("click", () => {
-          const ambientAudio = document.getElementById("ambient-audio");
-          if (ambientAudio) {
-            ambientAudio.volume = 0.3;
-            ambientAudio.play().then(() => {
-              console.log("🎵 Audio enabled by user interaction");
-              audioBtn.innerHTML = "🔇 Mute";
-              audioBtn.onclick = () => {
-                ambientAudio.pause();
-                audioBtn.innerHTML = "🔊 Enable Audio";
-                audioBtn.onclick = () => {
-                  ambientAudio.play();
-                  audioBtn.innerHTML = "🔇 Mute";
-                };
-              };
-            }).catch(console.error);
-          }
-        });
-        
-        document.body.appendChild(audioBtn);
-      }
+
 
       // Asset preloading function with iOS compatibility
       function preloadAsset(url, type) {
@@ -809,20 +769,25 @@
                 el.setAttribute("visible", "true");
               });
               loadingEl.classList.add("hidden");
-              
+
               // Start ambient audio when AR experience is ready
               const ambientAudio = document.getElementById("ambient-audio");
               if (ambientAudio) {
                 ambientAudio.volume = 0.3; // Set volume to 30% for ambient background
-                ambientAudio.play().then(() => {
-                  console.log("🎵 Ambient audio started successfully");
-                }).catch((error) => {
-                  console.log("🔇 Audio autoplay prevented (user interaction required):", error.message);
-                  // Add a subtle audio icon to let users know they can enable audio
-                  addAudioControlButton();
-                });
+                ambientAudio
+                  .play()
+                  .then(() => {
+                    console.log("🎵 Ambient audio started successfully");
+                  })
+                  .catch((error) => {
+                    console.log(
+                      "🔇 Audio autoplay prevented (user interaction required):",
+                      error.message
+                    );
+                    // Audio will remain paused until user interaction
+                  });
               }
-              
+
               console.log("✅ AR experience ready and synchronized!");
             }, 200);
           };
