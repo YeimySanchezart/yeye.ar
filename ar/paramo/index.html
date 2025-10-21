@@ -79,12 +79,18 @@
       }
       .footer {
         position: fixed;
-        bottom: calc(env(safe-area-inset-bottom) + 20px);
+        /* Fallback for browsers that don't support env() or max() */
+        bottom: 20px;
+        /* Modern browsers with safe area support */
+        bottom: calc(env(safe-area-inset-bottom, 0px) + 20px);
         left: 50%;
         transform: translateX(-50%);
         z-index: 999;
         width: fit-content;
+        width: -moz-fit-content;
+        width: -webkit-fit-content;
         max-width: calc(100vw - 40px);
+        max-width: -webkit-calc(100vw - 40px);
       }
       .footer a {
         display: inline-block;
@@ -97,34 +103,56 @@
         font-weight: bold;
         border: 2px solid rgba(255, 255, 255, 0.5);
         transition: all 0.3s ease;
+        -webkit-transition: all 0.3s ease;
         box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+        /* Backdrop filter with fallbacks */
         backdrop-filter: blur(10px);
         -webkit-backdrop-filter: blur(10px);
+        -moz-backdrop-filter: blur(10px);
       }
       .footer a:hover {
         background: rgba(0, 0, 0, 1);
         border-color: rgba(255, 255, 255, 0.8);
         transform: translateY(-2px);
+        -webkit-transform: translateY(-2px);
         box-shadow: 0 6px 16px rgba(0, 0, 0, 0.6);
       }
       
       /* Ensure visibility on all mobile devices */
       @media (max-width: 768px) {
         .footer {
-          bottom: calc(env(safe-area-inset-bottom) + max(30px, 5vh));
+          /* Fallback for browsers without max() support */
+          bottom: 30px;
+          bottom: calc(env(safe-area-inset-bottom, 0px) + 30px);
+          /* Try max() for modern browsers, fallback to larger value */
+          bottom: calc(env(safe-area-inset-bottom, 0px) + max(30px, 5vh));
         }
         .footer a {
           padding: 14px 22px;
           font-size: 16px;
           min-height: 44px;
           box-sizing: border-box;
+          -webkit-box-sizing: border-box;
         }
       }
       
       /* Extra safety for very small screens */
       @media (max-height: 600px) {
         .footer {
-          bottom: calc(env(safe-area-inset-bottom) + max(40px, 8vh));
+          bottom: 40px;
+          bottom: calc(env(safe-area-inset-bottom, 0px) + 40px);
+          bottom: calc(env(safe-area-inset-bottom, 0px) + max(40px, 8vh));
+        }
+      }
+      
+      /* Brave browser specific fixes */
+      @media screen and (-webkit-min-device-pixel-ratio: 0) {
+        .footer {
+          /* Force higher z-index for Brave */
+          z-index: 9999;
+          /* Ensure it's always visible */
+          visibility: visible !important;
+          opacity: 1 !important;
         }
       }
       
